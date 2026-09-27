@@ -94,37 +94,120 @@ extension RootView {
     }
 }
 
+// The first screen: connect to a hub. On a Mac the hub on this machine is
+// one click (loopback needs no token) once it answers; any other hub
+// pairs by the link its Settings shows.
 struct PairView: View {
     @State var link: String
     let done: (String) -> Void
+    #if os(macOS)
+    // nil while asking, then whether 127.0.0.1:3787 answered /hello
+    @State private var local: Bool?
+    private static let localURL = "http://127.0.0.1:3787/"
+    #endif
+
+    private var typed: String { link.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        Form {
-            #if os(macOS)
-            // a hub on this Mac listens on loopback, where no token is asked
-            Section {
-                Button("Connect to the hub on this Mac") { done("http://127.0.0.1:3787/") }
-            } footer: {
-                Text("Uses 127.0.0.1:3787, the address Backplane serves on this Mac.")
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 10) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 34, weight: .regular))
+                        .foregroundStyle(.tint)
+                        .frame(width: 64, height: 64)
+                        .background(Color.accentColor.opacity(0.12), in: .rect(cornerRadius: 16))
+                    Text("Connect to a hub").font(.title2.bold())
+                    Text("Your threads, bots and boards live on a Backplane hub. Pair once; the app remembers it.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                }
+                #if os(macOS)
+                card {
+                    HStack(spacing: 12) {
+                        Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(.secondary).frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("This Mac").font(.headline)
+                            HStack(spacing: 6) {
+                                Circle().fill(local == true ? Color.green : local == false ? Color.orange : Color.secondary)
+                                    .frame(width: 7, height: 7)
+                                Text(local == true ? "Hub running at 127.0.0.1:3787" : local == false ? "No hub answering at 127.0.0.1:3787" : "Looking for a hub…")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 12)
+                        if local == false {
+                            Button("Retry") { Task { await probe() } }
+                        }
+                        Button("Connect") { done(Self.localURL) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(local != true)
+                            .keyboardShortcut(local == true && typed.isEmpty ? .defaultAction : nil)
+                    }
+                }
+                #endif
+                card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(anotherTitle).font(.headline)
+                        Text("Paste the pairing link from that hub's Settings (Pairing link).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .plainTextInput()
+                                .autocorrectionDisabled()
+                                .urlKeyboard()
+                                .onSubmit { if !typed.isEmpty { done(typed) } }
+                            Button("Connect") { done(typed) }
+                                .disabled(typed.isEmpty)
+                        }
+                    }
+                }
             }
-            #endif
-            Section {
-                TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
-                    .labelsHidden()
-                    .plainTextInput()
-                    .autocorrectionDisabled()
-                    .urlKeyboard()
-                    .onSubmit { if !link.trimmingCharacters(in: .whitespaces).isEmpty { done(link) } }
-            } header: {
-                Text("Pairing link")
-            } footer: {
-                Text("Paste the tailnet link Backplane shows in Settings (Pairing link).")
-            }
-            Button("Connect") { done(link) }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
+            .frame(maxWidth: 480)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 40)
+            .frame(maxWidth: .infinity)
         }
-        .formStyle(.grouped)
-        .navigationTitle("Pair with a hub")
+        .navigationTitle("Backplane")
+        .inlineTitle()
+        #if os(macOS)
+        .task { await probe() }
+        .frame(minWidth: 560, minHeight: 480)
+        #endif
     }
+
+    private var anotherTitle: String {
+        #if os(macOS)
+        "Another hub"
+        #else
+        "Pair with a hub"
+        #endif
+    }
+
+    private func card<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        c()
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.secondaryBackground, in: .rect(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)))
+    }
+
+    #if os(macOS)
+    // GET /hello answers without a token (server.bend, Hello.answer)
+    private func probe() async {
+        local = nil
+        var r = URLRequest(url: URL(string: Self.localURL + "hello")!)
+        r.timeoutInterval = 2
+        let ok = (try? await URLSession.shared.data(for: r)).map { ($0.1 as? HTTPURLResponse)?.statusCode == 200 } ?? false
+        local = ok
+    }
+    #endif
 }
 
 // the hubs this phone is paired with (swipe to unpair), the owner's other
@@ -243,6 +326,43 @@ struct HubsPill: View {
         .accessibilityLabel(hubs.map { $0.name + ": " + HubDot.word(model.conn[$0.key]?.phase ?? .connecting) }.joined(separator: ", "))
     }
 }
+
+#if os(macOS)
+// the hubs' state along the foot of the Mac's sidebar; a click opens Hubs
+struct HubsFooter: View {
+    let model: AppModel
+    let hubs: [HubRow]
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 8) {
+                HStack(spacing: 3) {
+                    ForEach(hubs.prefix(4), id: \.key) { h in HubDot(phase: model.conn[h.key]?.phase ?? .connecting) }
+                }
+                .font(.system(size: 8))
+                Text(summary).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .frame(height: 32)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+        .help("Hubs")
+    }
+
+    private var summary: String {
+        guard let h = hubs.first else { return "No hub" }
+        let word = HubDot.word(model.conn[h.key]?.phase ?? .connecting)
+        return hubs.count == 1 ? h.name + " · " + word : "\(hubs.count) hubs · " + h.name + " " + word
+    }
+}
+#endif
 
 private struct SwipeButton: View {
     let model: AppModel
@@ -373,6 +493,9 @@ struct ProjectsView: View {
             if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }
         .projectsListStyle(sidebar: split)
+        #if os(macOS)
+        .safeAreaInset(edge: .bottom, spacing: 0) { HubsFooter(model: model, hubs: screen.hubs) { pairing = true } }
+        #endif
         .overlay {
             if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty {
                 // a hub still catching up has not said what there is yet
@@ -388,15 +511,18 @@ struct ProjectsView: View {
         }
         .navigationTitle("Backplane")
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .leadingBar) {
                 HubsPill(model: model, hubs: screen.hubs) { pairing = true }
             }
+            #endif
             ToolbarItemGroup(placement: .trailingBar) {
                 // with several hubs, the picker opens on the one chosen
                 if screen.hubs.count > 1 {
                     Menu {
                         ForEach(screen.hubs, id: \.key) { h in Button(h.name) { model.act("picker-open", h.key + "|") } }
                     } label: { Image(systemName: "folder.badge.plus") }
+                    .menuIndicator(.hidden)
                     .accessibilityLabel("Add project")
                 } else {
                     Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("Add project")
@@ -408,6 +534,7 @@ struct ProjectsView: View {
                     Button("Hubs", systemImage: "link") { pairing = true }
                     Button("Settings", systemImage: "gear") { model.act("flag", "settings") }
                 } label: { Image(systemName: "ellipsis.circle") }
+                .menuIndicator(.hidden)
                 .accessibilityLabel("More")
             }
         }
@@ -781,6 +908,7 @@ struct ThreadScreen: View {
                     } label: {
                         Image(systemName: "cpu")
                     }
+                    .menuIndicator(.hidden)
                     .accessibilityLabel("Board viewer")
                 }
                 ForEach(thread.tools.filter { $0.action == "interrupt" }, id: \.self) { t in
@@ -810,6 +938,7 @@ struct ThreadScreen: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .menuIndicator(.hidden)
             }
         }
     }
