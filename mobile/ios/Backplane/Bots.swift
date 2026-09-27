@@ -100,6 +100,7 @@ struct BotsSection: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .plainMenu()
                 .accessibilityLabel("New bot or room")
             }
         }
