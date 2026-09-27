@@ -109,7 +109,7 @@ private struct SpaceLeaf: View {
             }
             .padding(12)
             .frame(minWidth: 110, alignment: .leading)
-            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 12))
+            .background(Color.secondaryBackground, in: .rect(cornerRadius: 12))
         case "progress":
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -159,7 +159,7 @@ private struct SpaceLeaf: View {
             ScrollView(.horizontal) {
                 Text(block.text ?? "").font(.caption.monospaced()).textSelection(.enabled).padding(10)
             }
-            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
+            .background(Color.secondaryBackground, in: .rect(cornerRadius: 8))
         default:
             EmptyView()
         }
@@ -252,7 +252,7 @@ struct SpacePage: View {
                     if u.scheme == "space" {
                         model.act("space-link", page.bot + "\u{1f}" + u.absoluteString)
                     } else if u.scheme == "http" || u.scheme == "https" {
-                        UIApplication.shared.open(u)
+                        Platform.open(u)
                     }
                 }
                 .ignoresSafeArea(edges: .bottom)
@@ -268,27 +268,31 @@ struct SpacePage: View {
     }
 }
 
-private struct PageWeb: UIViewRepresentable {
+private struct PageWeb {
     let html: String
     let tapped: (URL) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> WKWebView {
+    fileprivate func make(_ coordinator: Coordinator) -> WKWebView {
         let c = WKWebViewConfiguration()
         c.defaultWebpagePreferences.allowsContentJavaScript = false
         c.websiteDataStore = .nonPersistent()
         let w = WKWebView(frame: .zero, configuration: c)
-        w.navigationDelegate = context.coordinator
+        w.navigationDelegate = coordinator
+        #if os(iOS)
         w.isOpaque = false
         w.backgroundColor = .clear
+        #else
+        w.underPageBackgroundColor = .clear
+        #endif
         return w
     }
 
-    func updateUIView(_ w: WKWebView, context: Context) {
-        context.coordinator.tapped = tapped
-        if context.coordinator.shown != html {
-            context.coordinator.shown = html
+    fileprivate func update(_ w: WKWebView, _ coordinator: Coordinator) {
+        coordinator.tapped = tapped
+        if coordinator.shown != html {
+            coordinator.shown = html
             w.loadHTMLString(html, baseURL: nil)
         }
     }
@@ -308,3 +312,15 @@ private struct PageWeb: UIViewRepresentable {
         }
     }
 }
+
+#if os(iOS)
+extension PageWeb: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { make(context.coordinator) }
+    func updateUIView(_ w: WKWebView, context: Context) { update(w, context.coordinator) }
+}
+#else
+extension PageWeb: NSViewRepresentable {
+    func makeNSView(context: Context) -> WKWebView { make(context.coordinator) }
+    func updateNSView(_ w: WKWebView, context: Context) { update(w, context.coordinator) }
+}
+#endif

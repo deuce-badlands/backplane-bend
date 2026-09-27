@@ -1,9 +1,11 @@
+#if os(iOS)
 import ActivityKit
+#endif
 import Foundation
 
 // The Dynamic Island's content: exactly the "island" object
 // src/mobile/notify.bend emits, and the content-state the hub pushes.
-struct IslandAttributes: ActivityAttributes {
+struct IslandAttributes {
     struct Line: Codable, Hashable {
         let thread: String
         let title: String
@@ -16,3 +18,9 @@ struct IslandAttributes: ActivityAttributes {
         let lines: [Line]
     }
 }
+
+// Live Activities are iOS-only; the Mac app decodes the same content-state
+// from the screen but has no Dynamic Island to show it on
+#if os(iOS)
+extension IslandAttributes: ActivityAttributes {}
+#endif

@@ -116,10 +116,9 @@ struct Lightbox: View {
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
-                ToolbarItem(placement: .topBarLeading) { ShareLink(item: shown.url) }
+                ToolbarItem(placement: .leadingBar) { ShareLink(item: shown.url) }
             }
-            .toolbarBackground(.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .barStyle(.black, scheme: .dark)
         }
     }
 }
@@ -223,7 +222,7 @@ struct TasksView: View {
             }
         }
         .padding(10)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+        .background(Color.secondaryBackground, in: .rect(cornerRadius: 10))
     }
 }
 
@@ -293,7 +292,7 @@ struct ComposerExtras: View {
                 ScrollView { Text(b.a).font(.callout).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 200)
             }
             .padding(10)
-            .background(Color(.secondarySystemBackground))
+            .background(Color.secondaryBackground)
             .padding(.horizontal).padding(.top, 8)
         }
         if !skills.isEmpty {
@@ -367,7 +366,7 @@ struct AttachButton: View {
                     guard let data = try? await it.loadTransferable(type: Data.self) else { continue }
                     let ext = it.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
                     // HEIC becomes JPEG, which every agent reads
-                    if ext == "heic", let img = UIImage(data: data), let jpg = img.jpegData(compressionQuality: 0.85) {
+                    if ext == "heic", let jpg = Platform.jpeg(data, quality: 0.85) {
                         model.attach(jpg, name: "photo-\(i + 1).jpg")
                     } else {
                         model.attach(data, name: "photo-\(i + 1).\(ext)")
@@ -412,7 +411,7 @@ struct DiffSheet: View {
             .listStyle(.plain)
             .environment(\.defaultMinListRowHeight, 14)
             .navigationTitle("Diff")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { model.act("panel") } }
                 ToolbarItem(placement: .primaryAction) {
@@ -458,13 +457,13 @@ struct TermSheet: View {
     @State private var buf = " "
     @FocusState private var typing: Bool
 
-    static let font = UIFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    static let cw = ("M" as NSString).size(withAttributes: [.font: font]).width
-    static let lh = ceil(font.lineHeight)
+    static let metrics = Platform.monoFont(size: 11)
+    static let cw = metrics.width
+    static let lh = ceil(metrics.line)
 
     // the size a terminal has room for on this phone, as "<cols>x<rows>"
     static func size() -> String {
-        let b = UIScreen.main.bounds
+        let b = Platform.screenSize
         return "\(max(Int((b.width - 16) / cw), 20))x\(max(Int((b.height * 0.5) / lh), 8))"
     }
 
@@ -512,9 +511,9 @@ struct TermSheet: View {
                 .onTapGesture { typing = true }
                 TextField("", text: $buf)
                     .focused($typing)
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
-                    .keyboardType(.asciiCapable)
+                    .asciiKeyboard()
                     .frame(width: 1, height: 1)
                     .opacity(0.01)
                     .onChange(of: buf) { old, new in
@@ -550,10 +549,8 @@ struct TermSheet: View {
                 .background(.bar)
             }
             .navigationTitle(term.title.isEmpty ? "Terminal" : term.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Self.color(term.bg), for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .inlineTitle()
+            .barStyle(Self.color(term.bg), scheme: .dark)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { model.act("term-toggle") } }
             }
@@ -592,17 +589,17 @@ struct FindSheet: View {
             }
             .safeAreaInset(edge: .top) {
                 TextField(find.mode == "files" ? "File name" : "Titles and messages", text: $text)
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
                     .focused($focused)
                     .padding(10)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+                    .background(Color.secondaryBackground, in: .rect(cornerRadius: 10))
                     .padding(.horizontal).padding(.vertical, 8)
                     .background(.bar)
                     .onChange(of: text) { _, t in model.act("find-q", t) }
             }
             .navigationTitle(find.mode == "files" ? "Find file" : "Search threads")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("find-close") } }
             }
@@ -644,7 +641,7 @@ struct SettingsSheet: View {
                 }
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
             }

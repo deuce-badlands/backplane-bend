@@ -409,7 +409,7 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
         let w = Int(view.drawableSize.width), h = Int(view.drawableSize.height)
         guard w > 0, h > 0 else { return }
         targets(w, h)
-        let k = Float(view.contentScaleFactor)
+        let k = Float(view.pixelScale)
         var u = Uniforms(size: SIMD2(Float(w), Float(h)), off: off * k, scale: scale * k, fade: 1, color: .zero)
         let t = drawable.texture
         if three {
@@ -508,6 +508,7 @@ final class PlotCanvas: MTKView {
         isPaused = true
         enableSetNeedsDisplay = true
         preferredFramesPerSecond = 120
+        #if os(iOS)
         isMultipleTouchEnabled = true
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
@@ -521,15 +522,28 @@ final class PlotCanvas: MTKView {
             g.delegate = self
             addGestureRecognizer(g)
         }
+        #endif
     }
 
     required init(coder: NSCoder) { fatalError() }
 
+    #if os(iOS)
     // every physical pixel (the default scale can be below the panel's)
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if let s = window?.windowScene?.screen { contentScaleFactor = s.nativeScale }
     }
+
+    func redraw() { setNeedsDisplay() }
+    private func relayout() { setNeedsLayout() }
+    #else
+    // y grows down, as on iOS: the board's transforms are shared
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    func redraw() { needsDisplay = true }
+    private func relayout() { needsLayout = true }
+    #endif
 
     private var three: Bool { renderer.three }
 
@@ -557,13 +571,20 @@ final class PlotCanvas: MTKView {
         o.dist = reach / (half * min(aspect, 1)) * 1.1
         renderer.orbit = o
         fitted = true
-        setNeedsDisplay()
+        redraw()
     }
 
+    #if os(iOS)
     override func layoutSubviews() {
         super.layoutSubviews()
         if !fitted { refit() }
     }
+    #else
+    override func layout() {
+        super.layout()
+        if !fitted { refit() }
+    }
+    #endif
 
     func show(_ f: PlotFrame, bg: UInt32, slab: UInt32, look: [UInt32]) {
         renderer.bg = SIMD4(Float((bg >> 16) & 255) / 255, Float((bg >> 8) & 255) / 255, Float(bg & 255) / 255, 1)
@@ -577,11 +598,11 @@ final class PlotCanvas: MTKView {
         box = f.box
         edge = f.edge.count == 4 && f.edge[0] <= f.edge[2] ? f.edge : f.box
         renderer.slab(edge, color: slab)
-        if first { fitted = false; setNeedsLayout() }
+        if first { fitted = false; relayout() }
         fadeFrom = f.fresh.isEmpty ? nil : f.at
         renderer.fade = f.fresh.isEmpty ? 1 : 0
         run()
-        setNeedsDisplay()
+        redraw()
     }
 
     // the picked piece ("chunk,info" of the held chunks), drawn bright
@@ -592,7 +613,7 @@ final class PlotCanvas: MTKView {
         } else {
             renderer.highlight(nil, nil)
         }
-        setNeedsDisplay()
+        redraw()
     }
 
     private func zoom(by f: Float, at p: CGPoint) {
@@ -610,10 +631,11 @@ final class PlotCanvas: MTKView {
         renderer.scale = s
     }
 
+    #if os(iOS)
     @objc private func pinched(_ g: UIPinchGestureRecognizer) {
         zoom(by: Float(g.scale), at: g.location(in: self))
         g.scale = 1
-        setNeedsDisplay()
+        redraw()
     }
 
     @objc private func panned(_ g: UIPanGestureRecognizer) {
@@ -625,7 +647,7 @@ final class PlotCanvas: MTKView {
             let m = SIMD2(Float(t.x), Float(t.y))
             if g.numberOfTouches >= 2 { o.move(m, o.unit(Float(bounds.height))) } else { o.spin(m, 0.008) }
             renderer.orbit = o
-            setNeedsDisplay()
+            redraw()
             return
         }
         renderer.off += SIMD2(Float(t.x), Float(t.y))
@@ -635,7 +657,7 @@ final class PlotCanvas: MTKView {
             fling = SIMD2(Float(v.x), Float(v.y))
             run()
         }
-        setNeedsDisplay()
+        redraw()
     }
 
     // two fingers twisting roll the model about the view axis
@@ -644,12 +666,22 @@ final class PlotCanvas: MTKView {
         g.rotation = 0
         guard three else { return }
         renderer.orbit.roll(a)
-        setNeedsDisplay()
+        redraw()
     }
 
     @objc private func tapped(_ g: UITapGestureRecognizer) {
-        if three || renderer.scale > fit * 1.5 { refit() } else { zoom(by: 3, at: g.location(in: self)) }
-        setNeedsDisplay()
+        doubled(at: g.location(in: self))
+    }
+
+    @objc private func picked(_ g: UITapGestureRecognizer) {
+        tap(at: g.location(in: self))
+    }
+    #endif
+
+    // a double tap or click: fit the 3D view or a zoomed board, else zoom in there
+    private func doubled(at p: CGPoint) {
+        if three || renderer.scale > fit * 1.5 { refit() } else { zoom(by: 3, at: p) }
+        redraw()
     }
 
     // where on the board a point of the view lands (micrometres), and on
@@ -670,10 +702,6 @@ final class PlotCanvas: MTKView {
         guard t > 0 else { return nil }
         let q = a + (b - a) * t
         return (SIMD2(q.x, q.y), above ? renderer.top : renderer.bottom)
-    }
-
-    @objc private func picked(_ g: UITapGestureRecognizer) {
-        tap(at: g.location(in: self))
     }
 
     // what lies under a point, for Bend to pick from (View.pick)
@@ -701,10 +729,149 @@ final class PlotCanvas: MTKView {
         onPick(json)
     }
 
+    #if os(macOS)
+    // The Mac reads the mouse, the trackpad and the keys the way the desktop
+    // viewer does (docs/parity.md): a drag turns the 3D model (ctrl pans,
+    // shift zooms, alt rolls) or moves the board; a mouse wheel zooms at
+    // the pointer, forward out; two fingers on a trackpad move the board
+    // (or turn the model), pinch and twist; keys 1-7 are the standard views,
+    // arrows turn 15 degrees (90 with shift), z and shift+z zoom, f fits.
+    private var press = CGPoint.zero
+    private var last = CGPoint.zero
+    private var dragged = false
+    private var pending: DispatchWorkItem?
+
+    private func point(_ e: NSEvent) -> CGPoint { convert(e.locationInWindow, from: nil) }
+
+    private func down(_ e: NSEvent) {
+        window?.makeFirstResponder(self)
+        press = point(e)
+        last = press
+        dragged = false
+    }
+
+    override func mouseDown(with e: NSEvent) {
+        down(e)
+        if e.clickCount == 2 {
+            pending?.cancel()
+            pending = nil
+            doubled(at: press)
+        }
+    }
+
+    override func mouseUp(with e: NSEvent) {
+        guard !dragged, e.clickCount == 1 else { return }
+        // a single click inspects once a second click can no longer follow
+        let p = point(e)
+        let w = DispatchWorkItem { [weak self] in self?.tap(at: p) }
+        pending = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: w)
+    }
+
+    override func mouseDragged(with e: NSEvent) { drag(e, pan: false) }
+    override func otherMouseDown(with e: NSEvent) { down(e) }
+    override func otherMouseDragged(with e: NSEvent) { drag(e, pan: false) }
+    // a right drag moves the view, like ctrl
+    override func rightMouseDown(with e: NSEvent) { down(e) }
+    override func rightMouseDragged(with e: NSEvent) { drag(e, pan: true) }
+
+    private func drag(_ e: NSEvent, pan: Bool) {
+        let p = point(e)
+        let m = SIMD2(Float(p.x - last.x), Float(p.y - last.y))
+        last = p
+        dragged = true
+        pending?.cancel()
+        let mods = e.modifierFlags
+        if mods.contains(.shift) {
+            // up is in, about the press
+            zoom(by: exp(-m.y * 0.006), at: press)
+        } else if three {
+            var o = renderer.orbit
+            if pan || mods.contains(.control) {
+                o.move(m, o.unit(Float(bounds.height)))
+            } else if mods.contains(.option) {
+                o.roll(m.x * 0.01)
+            } else {
+                o.spin(m, 0.008)
+            }
+            renderer.orbit = o
+        } else {
+            renderer.off += m
+        }
+        redraw()
+    }
+
+    override func scrollWheel(with e: NSEvent) {
+        if e.hasPreciseScrollingDeltas && !e.modifierFlags.contains(.command) {
+            // a trackpad's two fingers: the board moves with them, the model turns
+            let m = SIMD2(Float(e.scrollingDeltaX), Float(e.scrollingDeltaY))
+            if three { renderer.orbit.spin(m, 0.008) } else { renderer.off += m }
+        } else {
+            // a mouse wheel (or cmd+scroll): the physical forward turn zooms out
+            let d = Float(e.isDirectionInvertedFromDevice ? -e.scrollingDeltaY : e.scrollingDeltaY)
+            guard d != 0 else { return }
+            zoom(by: d > 0 ? 1 / 1.2 : 1.2, at: point(e))
+        }
+        redraw()
+    }
+
+    override func magnify(with e: NSEvent) {
+        zoom(by: Float(1 + e.magnification), at: point(e))
+        redraw()
+    }
+
+    // counter-clockwise degrees; the model turns with the fingers
+    override func rotate(with e: NSEvent) {
+        guard three else { return }
+        renderer.orbit.roll(-Float(e.rotation) * .pi / 180)
+        redraw()
+    }
+
+    override func keyDown(with e: NSEvent) {
+        let big = e.modifierFlags.contains(.shift)
+        let a: Float = big ? .pi / 2 : .pi / 12
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        func turn(_ dx: Float, _ dy: Float) {
+            if three {
+                renderer.orbit.spin(SIMD2(dx, dy), a)
+            } else {
+                renderer.off += SIMD2(-dx, -dy) * 48
+            }
+        }
+        switch e.specialKey {
+        case .leftArrow?: turn(-1, 0)
+        case .rightArrow?: turn(1, 0)
+        case .upArrow?: turn(0, -1)
+        case .downArrow?: turn(0, 1)
+        default:
+            switch e.charactersIgnoringModifiers ?? "" {
+            case "f", "F": refit()
+            case "z": zoom(by: 1 / 1.25, at: centre)
+            case "Z": zoom(by: 1.25, at: centre)
+            case let k where three && k.count == 1 && ("1" ... "7").contains(k):
+                // front, back, left, right, top, bottom, isometric (nearly
+                // straight down or up: aim needs a side to call right)
+                let side: Float = .pi / 2 - 0.001
+                let views: [(Float, Float)] = [(0, 0), (.pi, 0), (-.pi / 2, 0), (.pi / 2, 0), (0, side), (0, -side), (.pi / 4, 0.6154797)]
+                let v = views[Int(k)! - 1]
+                renderer.orbit.aim(yaw: v.0, pitch: v.1)
+            default:
+                super.keyDown(with: e)
+                return
+            }
+        }
+        redraw()
+    }
+    #endif
+
     private func run() {
         guard link == nil else { return }
         lastTick = CACurrentMediaTime()
+        #if os(iOS)
         let l = CADisplayLink(target: self, selector: #selector(tick))
+        #else
+        let l = displayLink(target: self, selector: #selector(tick))
+        #endif
         l.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         l.add(to: .main, forMode: .common)
         link = l
@@ -727,7 +894,7 @@ final class PlotCanvas: MTKView {
         } else {
             fling = .zero
         }
-        setNeedsDisplay()
+        redraw()
         if !busy {
             link?.invalidate()
             link = nil
@@ -741,28 +908,30 @@ final class PlotCanvas: MTKView {
     }
 }
 
+#if os(iOS)
 extension PlotCanvas: UIGestureRecognizerDelegate {
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 }
+#endif
 
-struct PlotCanvasView: UIViewRepresentable {
+extension MTKView {
+    // pixels per point, for turning the view's point-space transform into the drawable's
+    var pixelScale: CGFloat {
+        #if os(iOS)
+        contentScaleFactor
+        #else
+        bounds.width > 0 ? drawableSize.width / bounds.width : (window?.backingScaleFactor ?? 2)
+        #endif
+    }
+}
+
+struct PlotCanvasView {
     let frame: PlotFrame?
     let mesh: MeshFrame?
     let viewer: Viewer
     let pick: (String) -> Void
 
-    func makeUIView(context: Context) -> UIView {
-        guard let c = PlotCanvas(canvas: .zero) else {
-            let l = UILabel()
-            l.text = "This device has no Metal."
-            l.textAlignment = .center
-            return l
-        }
-        return c
-    }
-
-    func updateUIView(_ v: UIView, context: Context) {
-        guard let c = v as? PlotCanvas else { return }
+    @MainActor fileprivate func update(_ c: PlotCanvas, _ context: Coordinator) {
         c.margin = viewer.margin
         c.zmin = viewer.zmin
         c.zmax = viewer.zmax
@@ -779,28 +948,28 @@ struct PlotCanvasView: UIViewRepresentable {
         }
         if c.renderer.hiddenLayers != (viewer.off ?? 0) {
             c.renderer.hiddenLayers = viewer.off ?? 0
-            c.setNeedsDisplay()
+            c.redraw()
         }
-        if let f = frame, f.at != context.coordinator.shown || (viewer.look ?? []) != context.coordinator.look {
-            context.coordinator.shown = f.at
-            context.coordinator.look = viewer.look ?? []
+        if let f = frame, f.at != context.shown || (viewer.look ?? []) != context.look {
+            context.shown = f.at
+            context.look = viewer.look ?? []
             c.show(f, bg: viewer.bg, slab: viewer.slab, look: viewer.look ?? [])
             #if DEBUG
             // headless checks: SIMCTL_CHILD_BACKPLANE_TAP=x,y (points) taps there once
-            if let t = ProcessInfo.processInfo.environment["BACKPLANE_TAP"], !context.coordinator.tapped {
-                context.coordinator.tapped = true
+            if let t = ProcessInfo.processInfo.environment["BACKPLANE_TAP"], !context.tapped {
+                context.tapped = true
                 let xy = t.split(separator: ",").compactMap { Double($0) }
                 if xy.count == 2 { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { c.tap(at: CGPoint(x: xy[0], y: xy[1])) } }
             }
             #endif
         }
-        if three, let m = mesh, m.at != context.coordinator.mesh {
-            context.coordinator.mesh = m.at
+        if three, let m = mesh, m.at != context.mesh {
+            context.mesh = m.at
             c.renderer.load(mesh: m.mesh)
-            c.setNeedsDisplay()
+            c.redraw()
         }
-        if viewer.picked != context.coordinator.picked {
-            context.coordinator.picked = viewer.picked
+        if viewer.picked != context.picked {
+            context.picked = viewer.picked
             c.mark(viewer.picked)
         }
     }
@@ -815,6 +984,39 @@ struct PlotCanvasView: UIViewRepresentable {
         var tapped = false
     }
 }
+
+#if os(iOS)
+extension PlotCanvasView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        guard let c = PlotCanvas(canvas: .zero) else {
+            let l = UILabel()
+            l.text = "This device has no Metal."
+            l.textAlignment = .center
+            return l
+        }
+        return c
+    }
+
+    func updateUIView(_ v: UIView, context: Context) {
+        if let c = v as? PlotCanvas { update(c, context.coordinator) }
+    }
+}
+#else
+extension PlotCanvasView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        guard let c = PlotCanvas(canvas: .zero) else {
+            let l = NSTextField(labelWithString: "This Mac has no Metal.")
+            l.alignment = .center
+            return l
+        }
+        return c
+    }
+
+    func updateNSView(_ v: NSView, context: Context) {
+        if let c = v as? PlotCanvas { update(c, context.coordinator) }
+    }
+}
+#endif
 
 // what a tapped item is, as the window's inspector shows it
 private struct CardView: View {
@@ -881,7 +1083,7 @@ struct ViewerControls: View {
                     Label("Layers", systemImage: "square.3.layers.3d")
                 }
                 .buttonStyle(.bordered)
-                .menuActionDismissBehavior(.disabled)
+                .keepsMenuOpen()
             }
             if viewer.open == "3d" {
                 Toggle(isOn: Binding(get: { viewer.parts ?? true }, set: { _ in model.act("view-parts") })) { Text("Parts") }
@@ -939,9 +1141,61 @@ struct PlotScreen: View {
             }
         }
         .preferredColorScheme(viewer.light == true ? .light : .dark)
-        .statusBarHidden()
+        .hiddenStatusBar()
     }
 }
+
+extension View {
+    // the board viewer: over the thread on a phone, in a window of its own
+    // beside the thread on a Mac
+    func boardViewer(model: AppModel, open: Bool) -> some View {
+        modifier(BoardViewer(model: model, open: open))
+    }
+}
+
+private struct BoardViewer: ViewModifier {
+    let model: AppModel
+    let open: Bool
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(isPresented: Binding(get: { open }, set: { if !$0 { model.act("view", "") } })) {
+            if let v = model.screen?.thread?.viewer { PlotScreen(model: model, viewer: v) }
+        }
+        #else
+        content.onChange(of: open, initial: true) { _, now in
+            if now { openWindow(id: PlotWindow.id) } else { dismissWindow(id: PlotWindow.id) }
+        }
+        #endif
+    }
+}
+
+#if os(macOS)
+// The Mac's viewer window. Closing it closes the viewer, as the phone's
+// close button does.
+struct PlotWindow: View {
+    static let id = "plot"
+    let model: AppModel
+
+    var body: some View {
+        Group {
+            if let v = model.screen?.thread?.viewer, !v.open.isEmpty {
+                PlotScreen(model: model, viewer: v)
+            } else {
+                ContentUnavailableView("No board open", systemImage: "cpu")
+            }
+        }
+        .frame(minWidth: 640, minHeight: 480)
+        .onDisappear {
+            if model.screen?.thread?.viewer.open.isEmpty == false { model.act("view", "") }
+        }
+    }
+}
+#endif
 
 extension Color {
     init(rgb: UInt32) {

@@ -62,9 +62,9 @@ struct PairView: View {
         Form {
             Section {
                 TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
-                    .keyboardType(.URL)
+                    .urlKeyboard()
             } header: {
                 Text("Pairing link")
             } footer: {
@@ -117,9 +117,9 @@ struct HubsView: View {
             }
             Section {
                 TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
-                    .keyboardType(.URL)
+                    .urlKeyboard()
                 Button("Add hub") { model.pair(link); link = "" }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
             } header: {
                 Text("Pair another")
@@ -321,10 +321,10 @@ struct ProjectsView: View {
         }
         .navigationTitle("Backplane")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .leadingBar) {
                 HubsPill(model: model, hubs: screen.hubs) { pairing = true }
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .trailingBar) {
                 // with several hubs, the picker opens on the one chosen
                 if screen.hubs.count > 1 {
                     Menu {
@@ -373,7 +373,7 @@ private struct SearchField: View {
         HStack {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField(search.hint, text: $text)
-                .textInputAutocapitalization(.never)
+                .plainTextInput()
                 .autocorrectionDisabled()
                 .focused($focused)
                 .submitLabel(.go)
@@ -401,7 +401,7 @@ private struct FoldersSheet: View {
                 Section {
                     TextField(folders.hint, text: $text)
                         .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
+                        .plainTextInput()
                         .autocorrectionDisabled()
                         .onChange(of: text) { _, t in
                             guard t != folders.text else { return }
@@ -421,7 +421,7 @@ private struct FoldersSheet: View {
                 }
             }
             .navigationTitle("Add project")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("proj-close") } }
             }
@@ -463,7 +463,7 @@ struct ThreadDestination: View {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
+                .inlineTitle()
         }
     }
 
@@ -655,7 +655,7 @@ struct ThreadScreen: View {
                     .lineLimit(1...6)
                     .focused($focused)
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18))
+                    .background(Color.secondaryBackground, in: .rect(cornerRadius: 18))
                 // a long press sends with the other follow-up mode (queue or steer);
                 // while a turn runs with nothing typed the button stops it
                 let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -677,11 +677,9 @@ struct ThreadScreen: View {
           .background(.bar)
         }
         .navigationTitle(thread.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(isPresented: Binding(get: { !thread.viewer.open.isEmpty }, set: { if !$0 { model.act("view", "") } })) {
-            if let v = model.screen?.thread?.viewer { PlotScreen(model: model, viewer: v) }
-        }
-        .fullScreenCover(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
+        .inlineTitle()
+        .boardViewer(model: model, open: !thread.viewer.open.isEmpty)
+        .fullScreen(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
         .sheet(isPresented: Binding(get: { thread.diff != nil }, set: { if !$0, model.screen?.thread?.diff != nil { model.act("panel") } })) {
             if let d = model.screen?.thread?.diff { DiffSheet(model: model, diff: d) }
         }
@@ -697,7 +695,7 @@ struct ThreadScreen: View {
                     }
                 }
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .trailingBar) {
                 if !thread.viewer.choices.isEmpty {
                     Menu {
                         ForEach(thread.viewer.choices, id: \.value) { c in

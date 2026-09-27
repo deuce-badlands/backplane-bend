@@ -1,4 +1,5 @@
 import SwiftUI
+#if os(iOS)
 import UIKit
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -12,13 +13,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         NSLog("push: %@", error.localizedDescription)
     }
 }
+#else
+import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var model: AppModel?
+
+    func application(_ app: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken token: Data) {
+        MainActor.assumeIsolated { model?.registered(token) }
+    }
+
+    func application(_ app: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NSLog("push: %@", error.localizedDescription)
+    }
+}
+#endif
 
 @main
 struct BackplaneApp: App {
+    #if os(iOS)
     @UIApplicationDelegateAdaptor private var delegate: AppDelegate
+    @State private var grace: UIBackgroundTaskIdentifier = .invalid
+    #else
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    #endif
     @Environment(\.scenePhase) private var phase
     @State private var model = AppModel()
-    @State private var grace: UIBackgroundTaskIdentifier = .invalid
 
     var body: some Scene {
         WindowGroup {
@@ -31,6 +51,7 @@ struct BackplaneApp: App {
         }
         .onChange(of: phase) {
             model.foreground(phase == .active)
+            #if os(iOS)
             // a little time after leaving, so a turn ending now still alerts
             if phase == .background, grace == .invalid {
                 grace = UIApplication.shared.beginBackgroundTask {
@@ -41,6 +62,11 @@ struct BackplaneApp: App {
                 UIApplication.shared.endBackgroundTask(grace)
                 grace = .invalid
             }
+            #endif
         }
+        #if os(macOS)
+        WindowGroup("Board", id: PlotWindow.id) { PlotWindow(model: model) }
+            .defaultSize(width: 1100, height: 800)
+        #endif
     }
 }

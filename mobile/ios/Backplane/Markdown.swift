@@ -70,7 +70,7 @@ private struct BlockView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(block.plain).font(.callout.monospaced()).padding(12)
                 }
-                .background(Color(.secondarySystemBackground))
+                .background(Color.secondaryBackground)
             // the web page's copy button: the message's context menu copies
             case "button": EmptyView()
             default: MarkdownView(blocks: kids)
