@@ -100,6 +100,7 @@ struct HubsView: View {
                         }
                     }
                     .swipeActions { Button("Unpair", role: .destructive) { model.unpair(h.key) } }
+                    .macMenu { Button("Unpair", role: .destructive) { model.unpair(h.key) } }
                 }
             }
             if !screen.found.isEmpty {
@@ -243,6 +244,9 @@ private struct ThreadRow: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             ForEach(row.trail, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
+        }
+        .macMenu {
+            ForEach(row.lead + row.trail, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
         }
     }
 }
@@ -654,6 +658,8 @@ struct ThreadScreen: View {
                 TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
+                    .sendKeys(send: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send() } },
+                              alt: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") } })
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(Color.secondaryBackground, in: .rect(cornerRadius: 18))
                 // a long press sends with the other follow-up mode (queue or steer);

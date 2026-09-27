@@ -93,6 +93,35 @@ multisampled; the layers on its faces keep their analytic edge.
 Debug builds also read `BACKPLANE_VIEW` (board, schematic, 3d) and
 `BACKPLANE_TAP` (x,y in points) to open the viewer and tap without hands.
 
+## On a Mac
+
+The same app builds natively for macOS 14+ on Apple silicon (not Mac
+Catalyst): one target, destinations iPhone, iPad and Mac.
+`scripts/build-ios.sh mac` builds it here (not over SSH), checks it is
+sandboxed and opens it. `BACKPLANE_TEAM=<team id>` signs it with that team;
+without one it is signed to run locally.
+
+- Pair it with a hub on the same Mac as `127.0.0.1:3787`: loopback is
+  trusted, so no token. A hub elsewhere pairs as on a phone.
+- The board viewer opens in a window of its own beside the thread. It reads
+  the mouse, trackpad and keys the way the desktop viewer does: a drag turns
+  the 3D model (ctrl pans, shift zooms, alt rolls; right drag pans) or moves
+  the board; a mouse wheel zooms at the pointer, forward out; two fingers
+  on a trackpad move the board (or turn the model), pinch zooms, twist
+  rolls; a click inspects, a double click fits or zooms; 1-7 are the
+  standard views, arrows turn 15 degrees (90 with shift), z / shift+z zoom,
+  f fits.
+- cmd+return sends, opt+cmd+return sends with the other follow-up mode;
+  swipe actions are also on the right-click menu; the terminal takes the
+  keyboard directly.
+- What differs lives in `mobile/ios/Backplane/Platform.swift`. The Dynamic
+  Island (Live Activities) is iOS-only, so the Mac posts its own turn-end
+  alerts while it runs behind other windows; hub push (APNs) is iOS-only
+  for now.
+- The Mac build is always sandboxed (`Backplane-macOS.entitlements`): the
+  kept state lives in the app's container, never the shared
+  `~/Library/Application Support`.
+
 ## TestFlight
 
 `archive` needs `~/backplane-ios/signing.env` on the Mac (never committed):

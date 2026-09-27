@@ -486,6 +486,23 @@ struct TermSheet: View {
 
     private func key(_ k: String, _ mods: Int = 0) { model.act("term-key", "\(k)\t\(mods)") }
 
+    // a Mac keyboard straight to the pty: named keys by name, ctrl+letter as
+    // a key with ctrl held (4), anything else typed as text
+    private func press(_ p: KeyPress) -> KeyPress.Result {
+        let named: [KeyEquivalent: String] = [.return: "Enter", .delete: "Backspace", .escape: "Escape", .tab: "Tab",
+                                              .leftArrow: "ArrowLeft", .rightArrow: "ArrowRight", .upArrow: "ArrowUp", .downArrow: "ArrowDown",
+                                              .home: "Home", .end: "End", .pageUp: "PageUp", .pageDown: "PageDown", .deleteForward: "Delete"]
+        if let n = named[p.key] { key(n); return .handled }
+        if p.modifiers.contains(.command) { return .ignored }
+        if p.modifiers.contains(.control), let c = p.key.character.lowercased().first, c.isLetter {
+            key(String(c), 4)
+            return .handled
+        }
+        guard !p.characters.isEmpty else { return .ignored }
+        model.act("term-paste", p.characters)
+        return .handled
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -509,6 +526,8 @@ struct TermSheet: View {
                 .defaultScrollAnchor(.bottomLeading)
                 .background(Self.color(term.bg))
                 .onTapGesture { typing = true }
+                .terminalKeys($typing) { press($0) }
+                #if os(iOS)
                 TextField("", text: $buf)
                     .focused($typing)
                     .plainTextInput()
@@ -528,6 +547,7 @@ struct TermSheet: View {
                         if buf != " " { buf = " " }
                     }
                     .onSubmit { key("Enter"); typing = true }
+                #endif
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         Button("esc") { key("Escape") }

@@ -322,6 +322,7 @@ private struct MemoryTab: View {
                     if !m.tags.isEmpty { Text(m.tags).font(.caption).foregroundStyle(.secondary) }
                 }
                 .swipeActions { Button("Forget", role: .destructive) { model.act("mem-forget", m.key) } }
+                .macMenu { Button("Forget", role: .destructive) { model.act("mem-forget", m.key) } }
             }
         }
         .overlay { if items.isEmpty { ContentUnavailableView("Nothing remembered", systemImage: "brain") } }
@@ -352,6 +353,10 @@ private struct RoutinesTab: View {
                 .swipeActions {
                     Button("Delete", role: .destructive) { model.act("routine-delete", r.id) }
                     Button("Run") { model.act("routine-run", r.id) }.tint(.indigo)
+                }
+                .macMenu {
+                    Button("Run") { model.act("routine-run", r.id) }
+                    Button("Delete", role: .destructive) { model.act("routine-delete", r.id) }
                 }
             }
         }
@@ -435,6 +440,7 @@ private struct HooksTab: View {
                     }
                     .contextMenu { Button("Copy URL", systemImage: "doc.on.doc") { model.act("copy", url) } }
                     .swipeActions { Button("Revoke", role: .destructive) { model.act("hook-revoke", h.id) } }
+                    .macMenu { Button("Revoke", role: .destructive) { model.act("hook-revoke", h.id) } }
                 }
             }
         }
@@ -490,6 +496,7 @@ private struct SettingsTab: View {
                         Text(p.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     .swipeActions { Button("Unlink", role: .destructive) { model.act("peer-revoke", p.id) } }
+                    .macMenu { Button("Unlink", role: .destructive) { model.act("peer-revoke", p.id) } }
                 }
                 HStack {
                     TextField("This hub's address", text: $purl)

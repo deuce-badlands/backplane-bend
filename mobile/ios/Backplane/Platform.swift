@@ -55,6 +55,42 @@ extension View {
         #endif
     }
 
+    // a row's swipe actions again as a right-click menu on the Mac, where a
+    // swipe needs a trackpad and is easy to miss
+    func macMenu<C: View>(@ViewBuilder _ items: () -> C) -> some View {
+        #if os(macOS)
+        contextMenu(menuItems: items)
+        #else
+        self
+        #endif
+    }
+
+    // the composer on a Mac: cmd+return sends, opt+cmd+return sends with the
+    // other follow-up mode (the phone's long press)
+    func sendKeys(send: @escaping () -> Void, alt: @escaping () -> Void) -> some View {
+        #if os(macOS)
+        onKeyPress(.return, phases: .down) { k in
+            guard k.modifiers.contains(.command) else { return .ignored }
+            if k.modifiers.contains(.option) { alt() } else { send() }
+            return .handled
+        }
+        #else
+        self
+        #endif
+    }
+
+    // the terminal takes a Mac's keys itself; a phone types into a hidden field
+    func terminalKeys(_ focus: FocusState<Bool>.Binding, _ press: @escaping (KeyPress) -> KeyPress.Result) -> some View {
+        #if os(macOS)
+        focusable()
+            .focused(focus)
+            .focusEffectDisabled()
+            .onKeyPress(phases: [.down, .repeat], action: press)
+        #else
+        self
+        #endif
+    }
+
     // a menu that stays open while several items are toggled in a row (a
     // Mac menu closes on each pick)
     func keepsMenuOpen() -> some View {
