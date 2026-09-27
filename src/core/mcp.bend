@@ -511,7 +511,8 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
 
 # Permission prompts (Claude's --permission-prompt-tool)
 # -----------------------------------------------------
-# Claude asks before a tool runs outside full access. The request becomes
+# Claude asks before a tool runs outside full access (and, in every mode,
+# for AskUserQuestion and ExitPlanMode). The request becomes
 # an ask the user answers; the MCP reply waits (the server parks it) until
 # then. AskUserQuestion becomes a question; ExitPlanMode's plan becomes a
 # proposed plan, and Claude is told to stop and wait.
