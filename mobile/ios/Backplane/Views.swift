@@ -195,7 +195,7 @@ struct PairView: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.secondaryBackground, in: .rect(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
     }
 
     #if os(macOS)
@@ -870,8 +870,9 @@ struct ThreadScreen: View {
                 }
             }
             .padding(12)
-            .background(Color.secondaryBackground, in: .rect(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.2)))
+            // a click anywhere on the card (not only on the text's line) types
+            .background { Color.secondaryBackground.clipShape(.rect(cornerRadius: 14)).onTapGesture { focused = true } }
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
           }
           .disabled(!live)

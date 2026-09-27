@@ -1044,7 +1044,7 @@ private struct CardView: View {
         .padding(12)
         .frame(maxWidth: 320, alignment: .leading)
         .background(.regularMaterial, in: .rect(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
         .padding(12)
     }
 }
@@ -1098,7 +1098,7 @@ struct ViewerControls: View {
         .font(.callout)
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(.regularMaterial, in: .rect(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.2)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
         }
     }
 }
