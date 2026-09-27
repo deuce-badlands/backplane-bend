@@ -35,16 +35,17 @@ struct RootView: View {
             }
             .onChange(of: s.removing?.id) { removed = "" }
             .sheet(isPresented: Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })) {
-                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
+                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "").macSheet(width: 620, height: 640) }
             }
             .sheet(isPresented: Binding(get: { model.screen?.find != nil }, set: { if !$0, model.screen?.find != nil { model.act("find-close") } })) {
-                if let f = model.screen?.find { FindSheet(model: model, find: f) }
+                if let f = model.screen?.find { FindSheet(model: model, find: f).macSheet(width: 620, height: 560) }
             }
             .sheet(isPresented: $pairing) {
                 NavigationStack {
                     HubsView(model: model, screen: model.screen ?? s)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
                 }
+                .macSheet(width: 560, height: 520)
             }
         } else {
             ProgressView()
@@ -543,13 +544,13 @@ struct ProjectsView: View {
             ForEach(s.options, id: \.self) { o in Button(o.label) { model.act(s.action, o.value) } }
         }
         .sheet(isPresented: Binding(get: { screen.folders != nil }, set: { if !$0 { model.act("proj-close") } })) {
-            if let f = screen.folders { FoldersSheet(model: model, folders: f) }
+            if let f = screen.folders { FoldersSheet(model: model, folders: f).macSheet(width: 560, height: 520) }
         }
         .sheet(isPresented: Binding(get: { screen.newBot != nil }, set: { if !$0 { model.act("form-close", "@bnew") } })) {
-            if let f = model.screen?.newBot { NewBotSheet(model: model, form: f) }
+            if let f = model.screen?.newBot { NewBotSheet(model: model, form: f).macSheet(width: 520, height: 480) }
         }
         .sheet(isPresented: Binding(get: { screen.newRoom != nil }, set: { if !$0 { model.act("form-close", "@rnew") } })) {
-            if let f = model.screen?.newRoom { NewRoomSheet(model: model, form: f) }
+            if let f = model.screen?.newRoom { NewRoomSheet(model: model, form: f).macSheet(width: 520, height: 480) }
         }
     }
 }
@@ -884,10 +885,10 @@ struct ThreadScreen: View {
         .boardViewer(model: model, open: !thread.viewer.open.isEmpty)
         .fullScreen(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
         .sheet(isPresented: Binding(get: { thread.diff != nil }, set: { if !$0, model.screen?.thread?.diff != nil { model.act("panel") } })) {
-            if let d = model.screen?.thread?.diff { DiffSheet(model: model, diff: d) }
+            if let d = model.screen?.thread?.diff { DiffSheet(model: model, diff: d).macSheet(width: 900, height: 640) }
         }
         .sheet(isPresented: Binding(get: { thread.term != nil }, set: { if !$0, model.screen?.thread?.term != nil { model.act("term-toggle") } })) {
-            if let t = model.screen?.thread?.term { TermSheet(model: model, term: t).presentationDetents([.large]) }
+            if let t = model.screen?.thread?.term { TermSheet(model: model, term: t).presentationDetents([.large]).macTerminalSheet() }
         }
         .toolbar {
             #if os(iOS)

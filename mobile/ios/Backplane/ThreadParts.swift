@@ -464,8 +464,8 @@ struct TermSheet: View {
 
     // the size a terminal has room for on this phone, as "<cols>x<rows>"
     static func size() -> String {
-        let b = Platform.screenSize
-        return "\(max(Int((b.width - 16) / cw), 20))x\(max(Int((b.height * 0.5) / lh), 8))"
+        let b = Platform.terminalArea
+        return "\(max(Int((b.width - 16) / cw), 20))x\(max(Int(b.height / lh), 8))"
     }
 
     private static func color(_ c: UInt32) -> Color {

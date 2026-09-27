@@ -194,6 +194,25 @@ extension View {
         if sidebar { listStyle(.sidebar) } else { listStyle(.automatic) }
     }
 
+    // A Mac sheet takes its content's size, and a List or Form has none of
+    // its own, so a sheet collapsed to its title bar. Each sheet names the
+    // size it wants on a Mac; a phone's sheets fill the screen as before.
+    func macSheet(width: CGFloat, height: CGFloat) -> some View {
+        #if os(macOS)
+        frame(minWidth: width, idealWidth: width, minHeight: height, idealHeight: height)
+        #else
+        self
+        #endif
+    }
+
+    func macTerminalSheet() -> some View {
+        #if os(macOS)
+        macSheet(width: Platform.terminalSheet.width, height: Platform.terminalSheet.height)
+        #else
+        self
+        #endif
+    }
+
     // a menu drawn as its label alone: no border, no indicator
     func plainMenu() -> some View {
         menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden).fixedSize()
@@ -297,12 +316,18 @@ enum Platform {
         return CGImageDestinationFinalize(d) ? out as Data : nil
     }
 
-    // the space a sheet can use: the phone's screen, or the Mac's main screen
-    static var screenSize: CGSize {
+    // the room the terminal has: the phone's screen (half of it, above the
+    // keyboard), or the Mac's terminal sheet (its full height, no keyboard)
+    static var terminalArea: CGSize {
         #if os(iOS)
-        UIScreen.main.bounds.size
+        let b = UIScreen.main.bounds.size
+        return CGSize(width: b.width, height: b.height * 0.5)
         #else
-        NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
+        CGSize(width: terminalSheet.width, height: terminalSheet.height - 120)
         #endif
     }
+
+    #if os(macOS)
+    static let terminalSheet = CGSize(width: 820, height: 560)
+    #endif
 }

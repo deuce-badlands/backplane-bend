@@ -363,7 +363,7 @@ private struct RoutinesTab: View {
             }
         }
         .sheet(isPresented: Binding(get: { form?.open ?? false }, set: { if !$0 { model.act("form-close", "@onew") } })) {
-            if let f = model.screen?.bot?.routine { RoutineSheet(model: model, form: f) }
+            if let f = model.screen?.bot?.routine { RoutineSheet(model: model, form: f).macSheet(width: 520, height: 520) }
         }
     }
 }
