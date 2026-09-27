@@ -583,6 +583,12 @@ private struct SearchField: View {
 }
 
 // the project picker: a path field over the listed folder's rows
+// Add project, as a folder browser. The hub sends rows (Bend's picker): the
+// folder's parent ("up"), its subfolders ("dir"), adding the folder
+// ("add", or "off" when it already is a project) and, once a name is
+// typed, creating it ("new", "mkdir"). With the field empty it lists the
+// known projects instead. Here: a location bar, the folders to click into,
+// and one button that adds the folder being shown.
 private struct FoldersSheet: View {
     let model: AppModel
     let folders: Folders
@@ -590,43 +596,104 @@ private struct FoldersSheet: View {
     // what was typed here: a screen still echoing it never overwrites the field
     @State private var typed: Set<String> = []
 
+    private var browsing: Bool { folders.text.hasPrefix("~") || folders.text.hasPrefix("/") }
+    private var up: FolderRow? { folders.items.first { $0.kind == "up" } }
+    private var add: FolderRow? { browsing ? folders.items.first { $0.action == "proj-add" || $0.kind == "off" } : nil }
+    private var creates: [FolderRow] { folders.items.filter { $0.kind == "new" || $0.kind == "mkdir" } }
+    private var rows: [FolderRow] {
+        folders.items.filter { r in
+            r.kind != "up" && r.kind != "new" && r.kind != "mkdir" && r != add
+        }
+    }
+
+    // the folder the add row names, by its last component ("~" for home)
+    private var shownName: String {
+        guard let a = add else { return "" }
+        let path = a.kind == "off" ? a.label.replacingOccurrences(of: " is already a project", with: "") : a.value
+        let trimmed = path.hasSuffix("/") ? String(path.dropLast()) : path
+        return trimmed.split(separator: "/").last.map(String.init) ?? trimmed
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 8) {
-                        Image(systemName: "folder").foregroundStyle(.secondary)
-                        TextField(folders.hint, text: $text)
-                            .font(.body.monospaced())
-                            .plainTextInput()
-                            .autocorrectionDisabled()
-                            .macFieldStyle()
-                            // return opens the folder typed: its own "Add … as a
-                            // project" then heads the list, not its parent's
-                            .onSubmit {
-                                if (text.hasPrefix("~") || text.hasPrefix("/")) && !text.hasSuffix("/") { text += "/" }
-                            }
-                            .onChange(of: text) { _, t in
-                                guard t != folders.text else { return }
-                                typed.insert(t)
-                                model.act("picker-type", t)
-                            }
-                    }
-                    if !folders.error.isEmpty { Text(folders.error).font(.footnote).foregroundStyle(.red) }
-                } header: {
-                    Text("Folder on the hub")
-                } footer: {
-                    Text("Type a path and press Return to open it, or open a folder below; then choose Add … as a project.")
-                }
-                Section {
-                    ForEach(folders.items, id: \.self) { r in
-                        Button { model.act(r.action, r.value) } label: {
-                            Label(r.label, systemImage: Self.icon(r.kind)).lineLimit(1).truncationMode(.head)
+            VStack(spacing: 0) {
+                // location: back to the parent, and the path (return goes there)
+                HStack(spacing: 8) {
+                    Button { if let u = up { go(u.value) } } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless)
+                        .disabled(up == nil)
+                        .accessibilityLabel("Parent folder")
+                    TextField(folders.hint, text: $text)
+                        .font(.body.monospaced())
+                        .textFieldStyle(.roundedBorder)
+                        .plainTextInput()
+                        .autocorrectionDisabled()
+                        .onSubmit {
+                            if (text.hasPrefix("~") || text.hasPrefix("/")) && !text.hasSuffix("/") { text += "/" }
                         }
+                        .onChange(of: text) { _, t in
+                            guard t != folders.text else { return }
+                            typed.insert(t)
+                            model.act("picker-type", t)
+                        }
+                }
+                .padding(12)
+                if !folders.error.isEmpty {
+                    Label(folders.error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.bottom, 8)
+                }
+                Divider()
+                List {
+                    ForEach(rows, id: \.self) { r in
+                        Button { model.act(r.action, r.value) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: Self.icon(r.kind)).foregroundStyle(r.kind == "dir" ? Color.accentColor : .secondary).frame(width: 20)
+                                Text(r.label).lineLimit(1).truncationMode(.head)
+                                Spacer(minLength: 0)
+                                if r.action == "picker-type" { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
                         .disabled(r.action.isEmpty)
-                        .tint(r.kind == "dir" || r.kind == "up" ? .primary : .accentColor)
-                        .macRowButton()
                     }
+                    if !creates.isEmpty {
+                        Section {
+                            ForEach(creates, id: \.self) { r in
+                                Button { model.act(r.action, r.value) } label: {
+                                    Label(r.label, systemImage: Self.icon(r.kind))
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+                .overlay {
+                    if rows.isEmpty && creates.isEmpty && folders.error.isEmpty {
+                        Text(browsing ? "No folders here" : "No projects yet").foregroundStyle(.secondary)
+                    }
+                }
+                // the one thing this sheet is for: add the folder on show
+                if browsing {
+                    Divider()
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(add?.kind == "off" ? "Already a project" : "Add this folder").font(.caption).foregroundStyle(.secondary)
+                            Text(add.map { $0.kind == "off" ? $0.label.replacingOccurrences(of: " is already a project", with: "") : $0.value } ?? text)
+                                .font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                        }
+                        Spacer(minLength: 8)
+                        Button(shownName.isEmpty ? "Add as project" : "Add \u{201C}\(shownName)\u{201D}") {
+                            if let a = add, a.kind != "off" { model.act(a.action, a.value) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(add == nil || add?.kind == "off")
+                    }
+                    .padding(12)
+                    .background(.bar)
                 }
             }
             .navigationTitle("Add project")
@@ -640,6 +707,8 @@ private struct FoldersSheet: View {
             if !typed.contains(t) { typed = []; text = t }
         }
     }
+
+    private func go(_ path: String) { model.act("picker-type", path) }
 
     static func icon(_ kind: String) -> String {
         switch kind {
