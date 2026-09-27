@@ -100,11 +100,21 @@ struct PairView: View {
 
     var body: some View {
         Form {
+            #if os(macOS)
+            // a hub on this Mac listens on loopback, where no token is asked
+            Section {
+                Button("Connect to the hub on this Mac") { done("http://127.0.0.1:3787/") }
+            } footer: {
+                Text("Uses 127.0.0.1:3787, the address Backplane serves on this Mac.")
+            }
+            #endif
             Section {
                 TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
+                    .labelsHidden()
                     .plainTextInput()
                     .autocorrectionDisabled()
                     .urlKeyboard()
+                    .onSubmit { if !link.trimmingCharacters(in: .whitespaces).isEmpty { done(link) } }
             } header: {
                 Text("Pairing link")
             } footer: {
@@ -112,6 +122,7 @@ struct PairView: View {
             }
             Button("Connect") { done(link) }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
         }
+        .formStyle(.grouped)
         .navigationTitle("Pair with a hub")
     }
 }
@@ -168,6 +179,7 @@ struct HubsView: View {
                 Text("Paste the tailnet link Backplane shows in Settings (Pairing link).")
             }
         }
+        .formStyle(.grouped)
         .navigationTitle("Hubs")
     }
 
