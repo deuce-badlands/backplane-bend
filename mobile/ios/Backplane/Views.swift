@@ -594,16 +594,24 @@ private struct FoldersSheet: View {
         NavigationStack {
             List {
                 Section {
-                    TextField(folders.hint, text: $text)
-                        .font(.body.monospaced())
-                        .plainTextInput()
-                        .autocorrectionDisabled()
-                        .onChange(of: text) { _, t in
-                            guard t != folders.text else { return }
-                            typed.insert(t)
-                            model.act("picker-type", t)
-                        }
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder").foregroundStyle(.secondary)
+                        TextField(folders.hint, text: $text)
+                            .font(.body.monospaced())
+                            .plainTextInput()
+                            .autocorrectionDisabled()
+                            .macFieldStyle()
+                            .onChange(of: text) { _, t in
+                                guard t != folders.text else { return }
+                                typed.insert(t)
+                                model.act("picker-type", t)
+                            }
+                    }
                     if !folders.error.isEmpty { Text(folders.error).font(.footnote).foregroundStyle(.red) }
+                } header: {
+                    Text("Folder on the hub")
+                } footer: {
+                    Text("Type a path, or open a folder below and add it.")
                 }
                 Section {
                     ForEach(folders.items, id: \.self) { r in
@@ -612,6 +620,7 @@ private struct FoldersSheet: View {
                         }
                         .disabled(r.action.isEmpty)
                         .tint(r.kind == "dir" || r.kind == "up" ? .primary : .accentColor)
+                        .macRowButton()
                     }
                 }
             }

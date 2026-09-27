@@ -213,6 +213,25 @@ extension View {
         #endif
     }
 
+    // a Mac text field in a list draws as bare text on a line; give it the
+    // bordered box that says "type here"
+    func macFieldStyle() -> some View {
+        #if os(macOS)
+        textFieldStyle(.roundedBorder)
+        #else
+        self
+        #endif
+    }
+
+    // a button that is a list row: on a Mac, the row itself, not a pill in it
+    func macRowButton() -> some View {
+        #if os(macOS)
+        buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
+        #else
+        self
+        #endif
+    }
+
     // a menu drawn as its label alone: no border, no indicator
     func plainMenu() -> some View {
         menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden).fixedSize()
