@@ -1140,14 +1140,14 @@ struct PlotScreen: View {
                 CardView(card: c, model: model).frame(maxHeight: .infinity, alignment: .bottom)
             }
         }
-        .preferredColorScheme(viewer.light == true ? .light : .dark)
+        .viewerScheme(viewer.light == true ? .light : .dark)
         .hiddenStatusBar()
     }
 }
 
 extension View {
-    // the board viewer: over the thread on a phone, in a window of its own
-    // beside the thread on a Mac
+    // the board viewer: over the thread on a phone, in a pane beside the
+    // thread on a Mac
     func boardViewer(model: AppModel, open: Bool) -> some View {
         modifier(BoardViewer(model: model, open: open))
     }
@@ -1156,10 +1156,6 @@ extension View {
 private struct BoardViewer: ViewModifier {
     let model: AppModel
     let open: Bool
-    #if os(macOS)
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
-    #endif
 
     func body(content: Content) -> some View {
         #if os(iOS)
@@ -1167,35 +1163,16 @@ private struct BoardViewer: ViewModifier {
             if let v = model.screen?.thread?.viewer { PlotScreen(model: model, viewer: v) }
         }
         #else
-        content.onChange(of: open, initial: true) { _, now in
-            if now { openWindow(id: PlotWindow.id) } else { dismissWindow(id: PlotWindow.id) }
+        HSplitView {
+            content.frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+            if open, let v = model.screen?.thread?.viewer {
+                PlotScreen(model: model, viewer: v)
+                    .frame(minWidth: 420, idealWidth: 720, maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         #endif
     }
 }
-
-#if os(macOS)
-// The Mac's viewer window. Closing it closes the viewer, as the phone's
-// close button does.
-struct PlotWindow: View {
-    static let id = "plot"
-    let model: AppModel
-
-    var body: some View {
-        Group {
-            if let v = model.screen?.thread?.viewer, !v.open.isEmpty {
-                PlotScreen(model: model, viewer: v)
-            } else {
-                ContentUnavailableView("No board open", systemImage: "cpu")
-            }
-        }
-        .frame(minWidth: 640, minHeight: 480)
-        .onDisappear {
-            if model.screen?.thread?.viewer.open.isEmpty == false { model.act("view", "") }
-        }
-    }
-}
-#endif
 
 extension Color {
     init(rgb: UInt32) {

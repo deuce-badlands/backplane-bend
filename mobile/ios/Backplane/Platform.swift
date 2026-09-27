@@ -101,6 +101,16 @@ extension View {
         #endif
     }
 
+    // the viewer's own light or dark ground: the whole screen it covers on a
+    // phone, only its pane on a Mac (the thread beside it keeps the app's)
+    func viewerScheme(_ scheme: ColorScheme) -> some View {
+        #if os(iOS)
+        preferredColorScheme(scheme)
+        #else
+        environment(\.colorScheme, scheme)
+        #endif
+    }
+
     // the viewer takes the whole phone screen; a Mac window has no status bar
     func hiddenStatusBar() -> some View {
         #if os(iOS)

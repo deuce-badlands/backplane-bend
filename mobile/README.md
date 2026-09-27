@@ -103,7 +103,9 @@ without one it is signed to run locally.
 
 - Pair it with a hub on the same Mac as `127.0.0.1:3787`: loopback is
   trusted, so no token. A hub elsewhere pairs as on a phone.
-- The board viewer opens in a window of its own beside the thread. It reads
+- Projects, threads and bots sit in a sidebar; the selected one fills the
+  rest of the window. The board viewer opens as a pane beside the thread,
+  resizable by its divider, with its own light or dark ground. It reads
   the mouse, trackpad and keys the way the desktop viewer does: a drag turns
   the 3D model (ctrl pans, shift zooms, alt rolls; right drag pans) or moves
   the board; a mouse wheel zooms at the pointer, forward out; two fingers

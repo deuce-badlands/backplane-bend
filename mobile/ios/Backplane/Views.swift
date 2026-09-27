@@ -11,12 +11,7 @@ struct RootView: View {
         if model.links.isEmpty {
             NavigationStack { PairView(link: "") { model.pair($0) } }
         } else if let s = model.screen {
-            NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
-                ProjectsView(model: model, screen: s, pairing: $pairing)
-                    .navigationDestination(for: String.self) { id in
-                        ThreadDestination(model: model, id: id)
-                    }
-            }
+            navigation(s)
             .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
                 Button("OK") { model.act("dismiss") }
             }
@@ -51,6 +46,37 @@ struct RootView: View {
         } else {
             ProgressView()
         }
+    }
+}
+
+extension RootView {
+    // a phone pushes a thread over the list; a Mac keeps the projects,
+    // threads and bots in a sidebar with the selected one beside it
+    @ViewBuilder
+    private func navigation(_ s: Screen) -> some View {
+        let path = Binding(get: { model.path }, set: { model.navigate($0) })
+        #if os(macOS)
+        NavigationSplitView {
+            ProjectsView(model: model, screen: s, pairing: $pairing)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 420)
+        } detail: {
+            NavigationStack(path: path) {
+                ContentUnavailableView("No thread selected", systemImage: "bubble.left.and.bubble.right",
+                                       description: Text("Pick a thread or a bot in the sidebar."))
+                    .navigationDestination(for: String.self) { id in
+                        ThreadDestination(model: model, id: id)
+                    }
+            }
+        }
+        .frame(minWidth: 900, minHeight: 560)
+        #else
+        NavigationStack(path: path) {
+            ProjectsView(model: model, screen: s, pairing: $pairing)
+                .navigationDestination(for: String.self) { id in
+                    ThreadDestination(model: model, id: id)
+                }
+        }
+        #endif
     }
 }
 

@@ -64,9 +64,5 @@ struct BackplaneApp: App {
             }
             #endif
         }
-        #if os(macOS)
-        WindowGroup("Board", id: PlotWindow.id) { PlotWindow(model: model) }
-            .defaultSize(width: 1100, height: 800)
-        #endif
     }
 }
