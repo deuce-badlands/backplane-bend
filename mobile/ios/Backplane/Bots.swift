@@ -45,6 +45,7 @@ struct BotCat: View {
 struct BotsSection: View {
     let model: AppModel
     let screen: Screen
+    @Environment(\.splitLayout) private var split
 
     var body: some View {
         Section {
@@ -63,7 +64,7 @@ struct BotsSection: View {
                             .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        if !split { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                     }
                 }
                 .opacity(b.mood == "away" ? 0.5 : 1)
@@ -75,7 +76,7 @@ struct BotsSection: View {
                         Text(r.name).foregroundStyle(.primary)
                         Spacer()
                         Label("\(r.members)", systemImage: "person.2").font(.caption).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        if !split { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                     }
                 }
             }

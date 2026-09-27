@@ -3,6 +3,9 @@ import SwiftUI
 struct RootView: View {
     @Bindable var model: AppModel
     @State private var pairing = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var width
+    #endif
     // the delete (or remove) just answered: its dialog stays down until the screen drops it
     @State private var answered = ""
     @State private var removed = ""
@@ -50,14 +53,22 @@ struct RootView: View {
 }
 
 extension RootView {
-    // a phone pushes a thread over the list; a Mac keeps the projects,
-    // threads and bots in a sidebar with the selected one beside it
+    // a Mac, or an iPad with the room, keeps the projects, threads and bots
+    // in a sidebar with the selected one beside it; a phone pushes
+    private var split: Bool {
+        #if os(macOS)
+        true
+        #else
+        width == .regular
+        #endif
+    }
+
     @ViewBuilder
     private func navigation(_ s: Screen) -> some View {
-        #if os(macOS)
+        if split {
         NavigationSplitView {
             ProjectsView(model: model, screen: s, pairing: $pairing)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 420)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 400)
         } detail: {
             // the selection (a thread, or a bot's page) fills the column:
             // nothing to go back to, the sidebar is the way elsewhere
@@ -68,15 +79,18 @@ extension RootView {
                                        description: Text("Pick a thread or a bot in the sidebar."))
             }
         }
+        .environment(\.splitLayout, true)
+        #if os(macOS)
         .frame(minWidth: 900, minHeight: 560)
-        #else
+        #endif
+        } else {
         NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
             ProjectsView(model: model, screen: s, pairing: $pairing)
                 .navigationDestination(for: String.self) { id in
                     ThreadDestination(model: model, id: id)
                 }
         }
-        #endif
+        }
     }
 }
 
@@ -284,14 +298,15 @@ struct ProjectsView: View {
     // a swipe whose choices are up (a snooze)
     @State private var choosing: Swipe?
 
-    // a Mac's sidebar selects with the list's own selection (its rows'
-    // links cannot push into the column beside it); a phone pushes
+    @Environment(\.splitLayout) private var split
+    // projects the sidebar has folded shut
+    @State private var folded: Set<String> = []
+
+    // a sidebar selects with the list's own selection (its rows' links
+    // cannot push into the column beside it); a phone pushes
     private var selection: Binding<String?>? {
-        #if os(macOS)
-        Binding(get: { model.path.last }, set: { model.navigate($0.map { [$0] } ?? []) })
-        #else
-        nil
-        #endif
+        guard split else { return nil }
+        return Binding(get: { model.path.last }, set: { model.navigate($0.map { [$0] } ?? []) })
     }
 
     var body: some View {
@@ -300,7 +315,7 @@ struct ProjectsView: View {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
             ForEach(screen.projects) { p in
-                Section {
+                Section(isExpanded: Binding(get: { !folded.contains(p.id) }, set: { if $0 { folded.remove(p.id) } else { folded.insert(p.id) } })) {
                     ForEach(p.threads) { ThreadRow(model: model, row: $0) { choosing = $0 } }
                     if !p.snoozed.isEmpty {
                         Text(p.snoozedShelf).font(.subheadline).foregroundStyle(.secondary)
@@ -329,16 +344,15 @@ struct ProjectsView: View {
                         if p.archOpen == true { ForEach(arch) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
                     }
                 } header: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(p.title)
-                            Text(p.machine.isEmpty ? p.root : p.machine + ": " + p.root)
-                                .font(.caption2).textCase(nil).lineLimit(1).truncationMode(.head)
-                        }
+                    HStack(spacing: 8) {
+                        Text(p.title).textCase(nil)
+                        if !p.machine.isEmpty { Text(p.machine).font(.caption2).foregroundStyle(.secondary).textCase(nil) }
                         Spacer()
-                        Button { model.act("new-thread", p.id) } label: { Image(systemName: "square.and.pencil") }
+                        Button { model.act("new-thread", p.id) } label: { Image(systemName: "plus") }
+                            .buttonStyle(.borderless)
                             .accessibilityLabel("New thread")
                     }
+                    .help(p.machine.isEmpty ? p.root : p.machine + ": " + p.root)
                     .contextMenu {
                         Button("Remove project", systemImage: "trash", role: .destructive) { model.act("proj-remove", p.id) }
                     }
@@ -346,6 +360,7 @@ struct ProjectsView: View {
             }
             if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }
+        .projectsListStyle(sidebar: split)
         .overlay {
             if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty {
                 // a hub still catching up has not said what there is yet
@@ -374,11 +389,11 @@ struct ProjectsView: View {
                 } else {
                     Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("Add project")
                 }
-                Button { model.act("proj-find", screen.search?.open == true ? "off" : "on") } label: { Image(systemName: "magnifyingglass") }
-                    .accessibilityLabel("Find a project")
-                Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel("Hubs")
                 Menu {
+                    Button("Find a project", systemImage: "folder.badge.questionmark") { model.act("proj-find", screen.search?.open == true ? "off" : "on") }
                     Button("Search threads", systemImage: "magnifyingglass") { model.act("find-open", "search") }
+                    Divider()
+                    Button("Hubs", systemImage: "link") { pairing = true }
                     Button("Settings", systemImage: "gear") { model.act("flag", "settings") }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel("More")
@@ -649,76 +664,82 @@ struct ThreadScreen: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal).padding(.top, 8)
             }
-            HStack {
-                Menu {
-                    Section("Model") {
-                        ForEach(thread.picker.models, id: \.value) { c in
-                            Button { model.act("model", c.value) } label: {
-                                if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                            }
-                        }
-                    }
-                    if !thread.picker.efforts.isEmpty {
-                        Section("Effort") {
-                            ForEach(thread.picker.efforts, id: \.value) { c in
-                                Button { model.act("effort", c.value) } label: {
-                                    if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                }
-                            }
-                        }
-                    }
-                    if let ps = thread.picker.providers, !ps.isEmpty {
-                        Section("Provider") {
-                            ForEach(ps, id: \.value) { c in
-                                Button { model.act("effort", c.value) } label: {
-                                    if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(thread.picker.label).lineLimit(1)
-                        Image(systemName: "chevron.down")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("Model and effort: " + thread.picker.label)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal).padding(.top, 8)
             ComposerExtras(model: model, thread: thread)
-            HStack(alignment: .bottom, spacing: 8) {
-                AttachButton(model: model)
+            // one card: the text, then attach, the model and send along its foot
+            VStack(alignment: .leading, spacing: 10) {
                 TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
-                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...8)
                     .focused($focused)
                     .sendKeys(send: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send() } },
                               alt: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") } })
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.secondaryBackground, in: .rect(cornerRadius: 18))
-                // a long press sends with the other follow-up mode (queue or steer);
-                // while a turn runs with nothing typed the button stops it
-                let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let stop = thread.sendAct == "interrupt" && blank
-                Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 32))
-                    .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
-                    .onTapGesture {
-                        if stop { model.act("interrupt") } else if !blank { model.send() }
+                HStack(spacing: 10) {
+                    AttachButton(model: model)
+                    Menu {
+                        Section("Model") {
+                            ForEach(thread.picker.models, id: \.value) { c in
+                                Button { model.act("model", c.value) } label: {
+                                    if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                }
+                            }
+                        }
+                        if !thread.picker.efforts.isEmpty {
+                            Section("Effort") {
+                                ForEach(thread.picker.efforts, id: \.value) { c in
+                                    Button { model.act("effort", c.value) } label: {
+                                        if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                    }
+                                }
+                            }
+                        }
+                        if let ps = thread.picker.providers, !ps.isEmpty {
+                            Section("Provider") {
+                                ForEach(ps, id: \.value) { c in
+                                    Button { model.act("effort", c.value) } label: {
+                                        if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(thread.picker.label).lineLimit(1)
+                            Image(systemName: "chevron.down")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.12), in: .capsule)
                     }
-                    .onLongPressGesture {
-                        if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
-                    }
-                    .accessibilityLabel(thread.send)
-                    .accessibilityAddTraits(.isButton)
+                    .plainMenu()
+                    .accessibilityLabel("Model and effort: " + thread.picker.label)
+                    Spacer(minLength: 0)
+                    // a long press sends with the other follow-up mode (queue or steer);
+                    // while a turn runs with nothing typed the button stops it
+                    let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let stop = thread.sendAct == "interrupt" && blank
+                    Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 26))
+                        .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
+                        .onTapGesture {
+                            if stop { model.act("interrupt") } else if !blank { model.send() }
+                        }
+                        .onLongPressGesture {
+                            if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
+                        }
+                        .accessibilityLabel(thread.send)
+                        .accessibilityAddTraits(.isButton)
+                }
             }
-            .padding(.horizontal).padding(.vertical, 8)
+            .padding(12)
+            .background(Color.secondaryBackground, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.2)))
+            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
           }
           .disabled(!live)
           .background(.bar)
         }
         .navigationTitle(thread.title)
+        .windowSubtitle(thread.branch)
         .inlineTitle()
         .boardViewer(model: model, open: !thread.viewer.open.isEmpty)
         .fullScreen(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
@@ -729,6 +750,7 @@ struct ThreadScreen: View {
             if let t = model.screen?.thread?.term { TermSheet(model: model, term: t).presentationDetents([.large]) }
         }
         .toolbar {
+            #if os(iOS)
             if !thread.branch.isEmpty {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
@@ -737,6 +759,7 @@ struct ThreadScreen: View {
                     }
                 }
             }
+            #endif
             ToolbarItemGroup(placement: .trailingBar) {
                 if !thread.viewer.choices.isEmpty {
                     Menu {

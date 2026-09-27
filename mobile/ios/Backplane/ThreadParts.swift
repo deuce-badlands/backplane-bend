@@ -354,8 +354,9 @@ struct AttachButton: View {
             Button("Photos", systemImage: "photo.on.rectangle") { picking = true }
             Button("Files", systemImage: "folder") { importing = true }
         } label: {
-            Image(systemName: "paperclip").font(.system(size: 20)).padding(.bottom, 6)
+            Image(systemName: "paperclip").font(.system(size: 17)).foregroundStyle(.secondary)
         }
+        .plainMenu()
         .accessibilityLabel("Attach")
         .photosPicker(isPresented: $picking, selection: $photos, maxSelectionCount: 10, matching: .images)
         .onChange(of: photos) { _, items in

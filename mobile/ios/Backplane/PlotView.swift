@@ -1041,9 +1041,11 @@ private struct CardView: View {
             Button("Mention in chat") { model.act("view-mention", card.info) }
                 .buttonStyle(.borderedProminent)
         }
-        .padding()
-        .background(.regularMaterial, in: .rect(cornerRadius: 0))
-        .padding()
+        .padding(12)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(.regularMaterial, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)))
+        .padding(12)
     }
 }
 
@@ -1057,6 +1059,8 @@ struct ViewerControls: View {
     var body: some View {
         let sheets = viewer.sheets ?? []
         let layers = (viewer.layerList ?? []).filter { present.contains($0.layer) }
+        // nothing to offer, no palette
+        if !sheets.isEmpty || !layers.isEmpty || viewer.open == "3d" {
         HStack(spacing: 8) {
             if !sheets.isEmpty {
                 Menu {
@@ -1069,7 +1073,7 @@ struct ViewerControls: View {
                 } label: {
                     Label(sheets.first { $0.on }?.label.trimmingCharacters(in: .whitespaces) ?? "Sheet", systemImage: "doc.on.doc")
                 }
-                .buttonStyle(.bordered)
+                .plainMenu()
             }
             if !layers.isEmpty {
                 // stays open: several layers are turned on and off in a row
@@ -1082,16 +1086,20 @@ struct ViewerControls: View {
                 } label: {
                     Label("Layers", systemImage: "square.3.layers.3d")
                 }
-                .buttonStyle(.bordered)
+                .plainMenu()
                 .keepsMenuOpen()
             }
             if viewer.open == "3d" {
                 Toggle(isOn: Binding(get: { viewer.parts ?? true }, set: { _ in model.act("view-parts") })) { Text("Parts") }
                     .toggleStyle(.button)
+                    .controlSize(.small)
             }
-            Spacer()
         }
-        .padding(.horizontal)
+        .font(.callout)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.regularMaterial, in: .rect(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.2)))
+        }
     }
 }
 
@@ -1105,40 +1113,51 @@ struct PlotScreen: View {
         // a plot for any other source is stale (a switch in flight)
         let f = model.plots.frame.flatMap { $0.key == viewer.layers ? $0 : nil }
         let m = model.plots.mesh.flatMap { $0.key == viewer.key ? $0 : nil }
-        ZStack(alignment: .top) {
-            Color(rgb: viewer.bg).ignoresSafeArea()
-            PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer) { model.act("view-pick", $0) }
-                .ignoresSafeArea()
-            if f == nil {
-                ProgressView().tint(.white).frame(maxHeight: .infinity)
-            } else if let why = f?.none, !why.isEmpty {
-                Text(why).foregroundStyle(.secondary).frame(maxHeight: .infinity)
-            } else if viewer.open == "3d", let why = m?.none, !why.isEmpty {
-                Text(why).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
-            } else if viewer.open == "3d", viewer.parts ?? true, let note = viewer.note, !note.isEmpty {
-                Text(note).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(spacing: 0) {
+            // the viewer's own bar: what it shows, its ground, and a way out
+            HStack(spacing: 10) {
                 Picker("Source", selection: Binding(get: { viewer.open }, set: { model.act("view", $0) })) {
                     ForEach(viewer.choices, id: \.value) { Text($0.label).tag($0.value) }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 300)
-                Spacer()
+                .labelsHidden()
+                .fixedSize()
+                Spacer(minLength: 0)
                 // the viewer's own light or dark ground
-                Button { model.act("vw-light") } label: { Image(systemName: viewer.light == true ? "moon.fill" : "sun.max.fill").font(.title2) }
+                Button { model.act("vw-light") } label: { Image(systemName: viewer.light == true ? "moon" : "sun.max") }
+                    .buttonStyle(.borderless)
                     .accessibilityLabel(viewer.light == true ? "Dark ground" : "Light ground")
-                Button { model.act("view", "") } label: { Image(systemName: "xmark.circle.fill").font(.title2) }
+                Button { model.act("view", "") } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut(.cancelAction)
                     .accessibilityLabel("Close")
             }
-            .padding(.horizontal)
-            .padding(.top, 6)
-            ViewerControls(model: model, viewer: viewer, present: Set(f?.chunks.map { $0.layer } ?? []))
+            .font(.body.weight(.medium))
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .background(.bar)
+            ZStack {
+                Color(rgb: viewer.bg)
+                PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer) { model.act("view-pick", $0) }
+                if f == nil {
+                    ProgressView().tint(.white)
+                } else if let why = f?.none, !why.isEmpty {
+                    Text(why).foregroundStyle(.secondary)
+                } else if viewer.open == "3d", let why = m?.none, !why.isEmpty {
+                    Text(why).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
+                } else if viewer.open == "3d", viewer.parts ?? true, let note = viewer.note, !note.isEmpty {
+                    Text(note).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
+                }
+                // sheet, layers and parts float over the canvas, top right
+                ViewerControls(model: model, viewer: viewer, present: Set(f?.chunks.map { $0.layer } ?? []))
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                if let c = viewer.card {
+                    CardView(card: c, model: model)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
             }
-            if let c = viewer.card {
-                CardView(card: c, model: model).frame(maxHeight: .infinity, alignment: .bottom)
-            }
+            .ignoresSafeArea(edges: .bottom)
         }
         .viewerScheme(viewer.light == true ? .light : .dark)
         .hiddenStatusBar()
@@ -1156,21 +1175,59 @@ extension View {
 private struct BoardViewer: ViewModifier {
     let model: AppModel
     let open: Bool
+    @Environment(\.splitLayout) private var split
+    // the board's share of the space, set by dragging the divider
+    @State private var share: CGFloat = 0.5
 
     func body(content: Content) -> some View {
-        #if os(iOS)
-        content.fullScreenCover(isPresented: Binding(get: { open }, set: { if !$0 { model.act("view", "") } })) {
-            if let v = model.screen?.thread?.viewer { PlotScreen(model: model, viewer: v) }
-        }
-        #else
-        HSplitView {
-            content.frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
-            if open, let v = model.screen?.thread?.viewer {
-                PlotScreen(model: model, viewer: v)
-                    .frame(minWidth: 420, idealWidth: 720, maxWidth: .infinity, maxHeight: .infinity)
+        if split {
+            GeometryReader { g in
+                // beside the thread when there is width for both, above it when not
+                let wide = g.size.width >= 900
+                let total = wide ? g.size.width : g.size.height
+                let keep: CGFloat = wide ? 340 : 240, least: CGFloat = wide ? 320 : 220
+                let board = max(least, min(total - keep, total * share))
+                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                let viewer = open ? model.screen?.thread?.viewer : nil
+                layout {
+                    if !wide, let v = viewer {
+                        PlotScreen(model: model, viewer: v).frame(height: board)
+                        divider(wide: false, total: total)
+                    }
+                    content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if wide, let v = viewer {
+                        divider(wide: true, total: total)
+                        PlotScreen(model: model, viewer: v).frame(width: board)
+                    }
+                }
             }
+            .coordinateSpace(name: "boardSplit")
+        } else {
+            #if os(iOS)
+            content.fullScreenCover(isPresented: Binding(get: { open }, set: { if !$0 { model.act("view", "") } })) {
+                if let v = model.screen?.thread?.viewer { PlotScreen(model: model, viewer: v) }
+            }
+            #else
+            content
+            #endif
         }
-        #endif
+    }
+
+    // a hairline with a wider grip: dragging it moves the split
+    private func divider(wide: Bool, total: CGFloat) -> some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.25))
+            .frame(width: wide ? 1 : nil, height: wide ? nil : 1)
+            .overlay(
+                Color.clear
+                    .frame(width: wide ? 9 : nil, height: wide ? nil : 9)
+                    .contentShape(.rect)
+                    .resizeCursor(horizontal: wide)
+                    .gesture(DragGesture(coordinateSpace: .named("boardSplit")).onChanged { d in
+                        let at = wide ? d.location.x : d.location.y
+                        share = min(max(wide ? (total - at) / total : at / total, 0.2), 0.8)
+                    })
+            )
     }
 }
 

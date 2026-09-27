@@ -176,6 +176,50 @@ extension Image {
 }
 #endif
 
+// Wide windows (a Mac, an iPad in regular width) show the projects in a
+// sidebar with the selection beside it; a phone (or an iPad in Slide Over)
+// pushes. Views read this instead of asking which device they are on.
+private struct SplitLayoutKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    var splitLayout: Bool {
+        get { self[SplitLayoutKey.self] }
+        set { self[SplitLayoutKey.self] = newValue }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func projectsListStyle(sidebar: Bool) -> some View {
+        if sidebar { listStyle(.sidebar) } else { listStyle(.automatic) }
+    }
+
+    // a menu drawn as its label alone: no border, no indicator
+    func plainMenu() -> some View {
+        menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden).fixedSize()
+    }
+
+    // the thread's branch under its title in a Mac window's toolbar
+    func windowSubtitle(_ text: String) -> some View {
+        #if os(macOS)
+        navigationSubtitle(text)
+        #else
+        self
+        #endif
+    }
+
+    // a divider that can be dragged shows the resize cursor on a Mac
+    func resizeCursor(horizontal: Bool) -> some View {
+        #if os(macOS)
+        onHover { inside in
+            if inside { (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
+        }
+        #else
+        self
+        #endif
+    }
+}
+
 enum Platform {
     static func copy(_ text: String) {
         #if os(iOS)
