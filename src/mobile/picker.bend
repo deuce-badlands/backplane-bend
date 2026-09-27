@@ -114,8 +114,10 @@ def MPick.add(+u: U.Ui, +home: String, +dir: String) -> List<&2, J.Json>:
 def MPick.up(+home: String, +dir: String) -> List<&2, J.Json>:
   Bool.pick(List<&2, J.Json>, String.eq(dir, "/"), Nil{}, [MPick.row("..", "picker-type", MPick.field(home, U.Proj.parent(dir)), "up")])
 
-def MPick.create(+q: String, +dir: String, +ns: List<&2, String>) -> List<&2, J.Json>:
-  Bool.pick(List<&2, J.Json>, Bool.and(U.Proj.name_ok(q), Bool.not(U.Proj.exact(ns, String.trim(q)))),
+# only once the folder's own listing is in: before it, ns is the last
+# folder's, and the name offered may already exist here
+def MPick.create(ready: Bool, +q: String, +dir: String, +ns: List<&2, String>) -> List<&2, J.Json>:
+  Bool.pick(List<&2, J.Json>, Bool.and(ready, Bool.and(U.Proj.name_ok(q), Bool.not(U.Proj.exact(ns, String.trim(q))))),
     [MPick.row("Create project '" ++ String.trim(q) ++ "' here", "proj-new", U.Proj.join(dir, String.trim(q)), "new"),
      MPick.row("Create folder '" ++ String.trim(q) ++ "' here", "picker-mkdir", U.Proj.join(dir, String.trim(q)), "mkdir")], Nil{})
 
@@ -125,7 +127,7 @@ def MPick.items.q(empty: Bool, +u: U.Ui, +home: String, +q: String, +dir: String
     case True{}:
       List.concat(&2, J.Json, [MPick.add(u, home, dir), MPick.up(home, dir), MPick.rows(U.Proj.scored(ns, q), home, dir)])
     case False{}:
-      List.concat(&2, J.Json, [MPick.rows(List.sort(~U.Scored, ~U.Scored.before, U.Proj.scored(ns, q)), home, dir), MPick.create(q, dir, ns), MPick.add(u, home, dir)])
+      List.concat(&2, J.Json, [MPick.rows(List.sort(~U.Scored, ~U.Scored.before, U.Proj.scored(ns, q)), home, dir), MPick.create(MPick.answered(u), q, dir, ns), MPick.add(u, home, dir)])
 
 # no rows before the first listing, nor while the typed folder fails
 def MPick.items.k(none: Bool, +u: U.Ui, +q: String) -> List<&2, J.Json>:

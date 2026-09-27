@@ -601,6 +601,11 @@ private struct FoldersSheet: View {
                             .plainTextInput()
                             .autocorrectionDisabled()
                             .macFieldStyle()
+                            // return opens the folder typed: its own "Add … as a
+                            // project" then heads the list, not its parent's
+                            .onSubmit {
+                                if (text.hasPrefix("~") || text.hasPrefix("/")) && !text.hasSuffix("/") { text += "/" }
+                            }
                             .onChange(of: text) { _, t in
                                 guard t != folders.text else { return }
                                 typed.insert(t)
@@ -611,7 +616,7 @@ private struct FoldersSheet: View {
                 } header: {
                     Text("Folder on the hub")
                 } footer: {
-                    Text("Type a path, or open a folder below and add it.")
+                    Text("Type a path and press Return to open it, or open a folder below; then choose Add … as a project.")
                 }
                 Section {
                     ForEach(folders.items, id: \.self) { r in
