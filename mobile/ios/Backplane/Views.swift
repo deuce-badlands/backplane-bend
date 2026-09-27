@@ -54,23 +54,23 @@ extension RootView {
     // threads and bots in a sidebar with the selected one beside it
     @ViewBuilder
     private func navigation(_ s: Screen) -> some View {
-        let path = Binding(get: { model.path }, set: { model.navigate($0) })
         #if os(macOS)
         NavigationSplitView {
             ProjectsView(model: model, screen: s, pairing: $pairing)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 420)
         } detail: {
-            NavigationStack(path: path) {
+            // the selection (a thread, or a bot's page) fills the column:
+            // nothing to go back to, the sidebar is the way elsewhere
+            if let id = model.path.last {
+                NavigationStack { ThreadDestination(model: model, id: id) }.id(id)
+            } else {
                 ContentUnavailableView("No thread selected", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Pick a thread or a bot in the sidebar."))
-                    .navigationDestination(for: String.self) { id in
-                        ThreadDestination(model: model, id: id)
-                    }
             }
         }
         .frame(minWidth: 900, minHeight: 560)
         #else
-        NavigationStack(path: path) {
+        NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
             ProjectsView(model: model, screen: s, pairing: $pairing)
                 .navigationDestination(for: String.self) { id in
                     ThreadDestination(model: model, id: id)
@@ -284,8 +284,18 @@ struct ProjectsView: View {
     // a swipe whose choices are up (a snooze)
     @State private var choosing: Swipe?
 
+    // a Mac's sidebar selects with the list's own selection (its rows'
+    // links cannot push into the column beside it); a phone pushes
+    private var selection: Binding<String?>? {
+        #if os(macOS)
+        Binding(get: { model.path.last }, set: { model.navigate($0.map { [$0] } ?? []) })
+        #else
+        nil
+        #endif
+    }
+
     var body: some View {
-        List {
+        List(selection: selection) {
             if let f = screen.search, f.open {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
