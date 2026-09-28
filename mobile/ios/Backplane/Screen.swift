@@ -317,15 +317,32 @@ struct SetField: Decodable, Hashable {
 }
 
 struct SetRow: Decodable, Hashable {
-    // the heading it is grouped under, as the native window's
+    // the section it is under, and a heading within it ("Installed")
     let section: String?
+    let group: String?
+    // the control: "choice" (segmented), "menu" (pop-up), "stepper",
+    // "switch", "status" (a value, toned "ok" or "warn"), "field" (typed
+    // text); anything else draws its buttons in a row
+    let kind: String?
     let label, note: String
+    let value: String?
+    let tone: String?
     let field: SetField?
     let buttons: [SetButton]
+    // chips under the row (the dictionary's terms, each taking itself out)
+    let chips: [SetButton]?
+}
+
+// a section of Settings: its title, what is set there in a few words, and
+// whether it needs you (a dot beside it)
+struct SetSection: Decodable, Hashable {
+    let title, summary: String
+    let attention: Bool
 }
 
 struct Settings: Decodable {
     let rows: [SetRow]
+    let sections: [SetSection]?
 }
 
 // thread search ("search") or the file picker ("files"): its query and rows

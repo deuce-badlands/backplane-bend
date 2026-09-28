@@ -630,25 +630,167 @@ struct FindSheet: View {
 }
 
 // the hub's settings, as the desktop has them
-// The hub's settings, grouped under the native window's headings: a sheet
-// (on a Mac also from the app menu's Settings…, cmd+comma)
+// The hub's settings as a sheet (on a Mac also from the app menu's
+// Settings…, cmd+comma). A wide sheet (a Mac, an iPad) lists the sections
+// beside the chosen one, like System Settings; a phone lists them with
+// what each has set, and pushes into one.
 struct SettingsSheet: View {
     let model: AppModel
     let settings: Settings
     let version: String
+    // sections beside the chosen one (a Mac, an iPad), or a list that pushes
+    let wide: Bool
+    @AppStorage("settings.section") private var picked = ""
 
-    // consecutive rows under one heading, in the hub's order
+    private var sections: [SetSection] {
+        if let s = settings.sections, !s.isEmpty { return s }
+        var seen: [String] = []
+        for r in settings.rows where !seen.contains(r.section ?? "") { seen.append(r.section ?? "") }
+        return seen.map { SetSection(title: $0, summary: "", attention: false) }
+    }
+
+    private var current: SetSection? { sections.first { $0.title == picked } ?? sections.first }
+
+    var body: some View {
+        // the rows lay their controls out by the same width
+        Group { if wide { split } else { stack } }
+            .environment(\.splitLayout, wide)
+    }
+
+    private var split: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                List(selection: Binding(get: { current?.title }, set: { if let t = $0 { picked = t } })) {
+                    ForEach(sections, id: \.title) { s in
+                        HStack(spacing: 8) {
+                            SectionIcon(title: s.title)
+                            Text(s.title)
+                            Spacer(minLength: 4)
+                            if s.attention { Circle().fill(.orange).frame(width: 7, height: 7).accessibilityLabel("Needs attention") }
+                        }
+                        .tag(s.title)
+                    }
+                }
+                .listStyle(.sidebar)
+                .frame(width: Platform.settingsSidebar)
+                Divider()
+                if let c = current {
+                    SettingsPane(model: model, section: c, rows: settings.rows.filter { ($0.section ?? "") == c.title }, header: true)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            Divider()
+            HStack {
+                #if os(macOS)
+                Text("⌘1–\(min(9, sections.count)) switch sections").font(.caption).foregroundStyle(.secondary)
+                #endif
+                Spacer()
+                Button("Done") { model.act("flag", "settings") }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .background { keys }
+        .macSheet(width: 700, height: 520)
+        .pageSheet()
+    }
+
+    // cmd+1…9 picks a section
+    private var keys: some View {
+        ForEach(Array(sections.prefix(9).enumerated()), id: \.offset) { i, s in
+            Button("") { picked = s.title }
+                .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var stack: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(sections, id: \.title) { s in
+                        NavigationLink(value: s.title) {
+                            HStack(spacing: 10) {
+                                SectionIcon(title: s.title)
+                                Text(s.title)
+                                Spacer(minLength: 8)
+                                Text(s.summary).font(.subheadline).lineLimit(1)
+                                    .foregroundStyle(s.attention ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                            }
+                        }
+                    }
+                } footer: {
+                    if !version.isEmpty { Text("Backplane \(version)") }
+                }
+            }
+            .navigationTitle("Settings")
+            .inlineTitle()
+            .navigationDestination(for: String.self) { t in
+                if let s = sections.first(where: { $0.title == t }) {
+                    SettingsPane(model: model, section: s, rows: settings.rows.filter { ($0.section ?? "") == t }, header: false)
+                        .navigationTitle(t)
+                        .inlineTitle()
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
+            }
+        }
+    }
+}
+
+// a section's icon: a tinted rounded square, as System Settings draws them
+private struct SectionIcon: View {
+    let title: String
+
+    private var look: (String, Color) {
+        switch title {
+        case "Threads": ("text.bubble.fill", .gray)
+        case "Agents": ("cpu.fill", .indigo)
+        case "Writing": ("pencil.line", .orange)
+        case "KiCad": ("memorychip.fill", .teal)
+        case "Appearance": ("circle.lefthalf.filled", Color(white: 0.4))
+        case "Network": ("network", .blue)
+        case "Voice": ("mic.fill", .pink)
+        default: ("gearshape.fill", .gray)
+        }
+    }
+
+    var body: some View {
+        Image(systemName: look.0)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(look.1.gradient, in: .rect(cornerRadius: 6))
+    }
+}
+
+// one section's rows, under their headings ("Installed")
+private struct SettingsPane: View {
+    let model: AppModel
+    let section: SetSection
+    let rows: [SetRow]
+    let header: Bool
+
     private var groups: [(title: String, rows: [SetRow])] {
         var out: [(title: String, rows: [SetRow])] = []
-        for r in settings.rows {
-            let t = r.section ?? ""
+        for r in rows {
+            let t = r.group ?? ""
             if let last = out.last, last.title == t { out[out.count - 1].rows.append(r) } else { out.append((t, [r])) }
         }
         return out
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(alignment: .leading, spacing: 0) {
+            if header {
+                HStack(spacing: 10) {
+                    SectionIcon(title: section.title)
+                    Text(section.title).font(.title3.weight(.semibold))
+                }
+                .padding(.horizontal, 20).padding(.top, 16)
+            }
             Form {
                 ForEach(groups, id: \.title) { g in
                     Section {
@@ -659,46 +801,129 @@ struct SettingsSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Settings")
-            .inlineTitle()
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
-            }
         }
     }
 }
 
-// one setting: its label and note, a field when it takes text, and its
-// buttons (the current choice filled)
+// one setting: its label and note, and the control its kind names
 private struct SettingRowView: View {
     let model: AppModel
     let row: SetRow
     @State private var text = ""
+    @Environment(\.splitLayout) private var wide
+
+    private var kind: String { row.kind ?? "" }
+
+    // a phone puts a wide control (segments, a field) under its label
+    private var below: Bool {
+        #if os(macOS)
+        false
+        #else
+        !wide && (kind == "choice" || kind == "field" || (kind == "status" && !row.buttons.isEmpty) || kind == "")
+        #endif
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(row.label)
-            if !row.note.isEmpty {
-                Text(row.note).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if below {
+                label
+                control
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    label.frame(maxWidth: .infinity, alignment: .leading)
+                    control.fixedSize()
+                }
             }
-            if let f = row.field { field(f) }
-            if !row.buttons.isEmpty {
+            if let cs = row.chips, !cs.isEmpty {
                 ChipFlow(spacing: 6) {
-                    ForEach(row.buttons, id: \.self) { b in
-                        if b.on {
-                            Button(b.label) { press(b) }.buttonStyle(.borderedProminent)
-                        } else {
-                            Button(b.label) { press(b) }.buttonStyle(.bordered)
+                    ForEach(cs, id: \.self) { c in
+                        Button { model.act(c.action, c.value) } label: {
+                            HStack(spacing: 4) { Text(c.label); Image(systemName: "xmark").font(.caption2.weight(.bold)) }
                         }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Remove \(c.label)")
                     }
                 }
                 .controlSize(.small)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .onAppear { text = row.field?.text ?? "" }
         // the hub clears a field once it has taken it (a saved key, an added term)
         .onChange(of: row.field?.text) { _, t in text = t ?? "" }
+    }
+
+    private var label: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(row.label)
+            if !row.note.isEmpty {
+                Text(row.note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+        }
+    }
+
+    private var chosen: Int? { row.buttons.firstIndex { $0.on } }
+
+    @ViewBuilder private var control: some View {
+        switch kind {
+        case "choice":
+            Picker(row.label, selection: Binding(get: { chosen ?? -1 }, set: { if $0 >= 0, $0 < row.buttons.count { press(row.buttons[$0]) } })) {
+                ForEach(Array(row.buttons.enumerated()), id: \.offset) { i, b in Text(b.label).tag(i) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        case "menu":
+            Picker(row.label, selection: Binding(get: { chosen ?? -1 }, set: { if $0 >= 0, $0 < row.buttons.count { press(row.buttons[$0]) } })) {
+                ForEach(Array(row.buttons.enumerated()), id: \.offset) { i, b in Text(b.label).tag(i) }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+        case "stepper":
+            HStack(spacing: 8) {
+                Text(row.value ?? "").monospacedDigit()
+                if row.buttons.count == 2 {
+                    Stepper(row.label, onIncrement: { press(row.buttons[1]) }, onDecrement: { press(row.buttons[0]) }).labelsHidden()
+                }
+            }
+        case "switch":
+            Toggle(row.label, isOn: Binding(get: { row.buttons.first?.on ?? false }, set: { on in
+                if let b = row.buttons.first(where: { $0.label.lowercased() == (on ? "on" : "off") }) { press(b) }
+            }))
+            .toggleStyle(.switch)
+            .labelsHidden()
+        case "status":
+            HStack(spacing: 8) {
+                if let v = row.value, !v.isEmpty {
+                    Text(v).foregroundStyle(tone).lineLimit(1)
+                }
+                buttons
+            }
+        case "field":
+            HStack(spacing: 8) {
+                if let f = row.field { field(f) }
+                buttons
+            }
+        default:
+            ChipFlow(spacing: 6) { buttons }.controlSize(.small)
+        }
+    }
+
+    private var tone: AnyShapeStyle {
+        switch row.tone {
+        case "ok": AnyShapeStyle(.green)
+        case "warn": AnyShapeStyle(.orange)
+        default: AnyShapeStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var buttons: some View {
+        ForEach(row.buttons, id: \.self) { b in
+            if b.on {
+                Button(b.label) { press(b) }.buttonStyle(.borderedProminent)
+            } else {
+                Button(b.label) { press(b) }.buttonStyle(.bordered)
+            }
+        }
     }
 
     @ViewBuilder private func field(_ f: SetField) -> some View {
@@ -714,9 +939,10 @@ private struct SettingRowView: View {
         .plainTextInput()
         .autocorrectionDisabled()
         .macFieldStyle()
+        .frame(minWidth: 160, idealWidth: 220, maxWidth: below ? .infinity : 240)
         .onChange(of: text) { _, t in model.field(f.name, t) }
         // return does the row's first button (Save, Add)
-        .onSubmit { if let b = row.buttons.first(where: { $0.action != "voice-unterm" && $0.action != "voice-unkey" }) { press(b) } }
+        .onSubmit { if let b = row.buttons.first { press(b) } }
     }
 
     // a row with a field sends what was typed first, so the action reads it

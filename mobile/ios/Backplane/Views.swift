@@ -6,6 +6,16 @@ struct RootView: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var width
     #endif
+    // Settings lists its sections beside the chosen one in a wide window (a
+    // Mac, an iPad in regular width); a sheet reports compact width on an
+    // iPad, so the window it covers decides
+    private var wideSettings: Bool {
+        #if os(macOS)
+        true
+        #else
+        width == .regular
+        #endif
+    }
     // the delete (or remove) just answered: its dialog stays down until the screen drops it
     @State private var answered = ""
     @State private var removed = ""
@@ -35,7 +45,7 @@ struct RootView: View {
             }
             .onChange(of: s.removing?.id) { removed = "" }
             .sheet(isPresented: Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })) {
-                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "").macSheet(width: 620, height: 640) }
+                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "", wide: wideSettings) }
             }
             .sheet(isPresented: Binding(get: { model.screen?.find != nil }, set: { if !$0, model.screen?.find != nil { model.act("find-close") } })) {
                 if let f = model.screen?.find { FindSheet(model: model, find: f).macSheet(width: 620, height: 560) }

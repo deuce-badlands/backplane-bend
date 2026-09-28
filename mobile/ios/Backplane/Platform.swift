@@ -246,6 +246,16 @@ extension View {
         #endif
     }
 
+    // an iPad sheet the size of a page, room for a sidebar beside its pane
+    @ViewBuilder
+    func pageSheet() -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) { presentationSizing(.page) } else { self }
+        #else
+        self
+        #endif
+    }
+
     // a divider that can be dragged shows the resize cursor on a Mac
     func resizeCursor(horizontal: Bool) -> some View {
         #if os(macOS)
@@ -343,6 +353,15 @@ enum Platform {
         return CGSize(width: b.width, height: b.height * 0.5)
         #else
         CGSize(width: terminalSheet.width, height: terminalSheet.height - 120)
+        #endif
+    }
+
+    // the Settings sheet's list of sections (an iPad's inset rows need more)
+    static var settingsSidebar: CGFloat {
+        #if os(macOS)
+        190
+        #else
+        230
         #endif
     }
 
