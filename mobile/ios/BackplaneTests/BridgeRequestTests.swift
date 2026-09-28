@@ -53,18 +53,4 @@ struct BridgeRequestTests {
         let frames = try sent(b.call("act", ["voice-key", ""]), to: f.hub)
         #expect(frames.contains { $0.contains("sk-proj-new") })
     }
-
-    @Test("the question dock's answers reach the hub")
-    func answers() throws {
-        let (b, f) = try scene("thread-question")
-        let screen = try JSONDecoder().decode(Out.self, from: Data(b.call("screen", []).utf8)).screen
-        let ask = try #require(screen?.thread?.asks?.first)
-        let value = try #require(QuestionDock.reply(ask, choices: [0: .options([0]), 1: .options([0, 1]), 2: .discuss], own: [:]))
-        let frames = try sent(b.call("act", ["answer", value]), to: f.hub)
-        let texts = frames.flatMap { $0 }.joined(separator: "\n")
-        #expect(texts.contains("k1"))
-        #expect(texts.contains("TPS62840"))
-        #expect(texts.contains("3V3, 1V8"))
-        #expect(texts.contains(QuestionDock.discussAnswer))
-    }
 }

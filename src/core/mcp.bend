@@ -586,17 +586,35 @@ def Perm.answers.k(input: J.Json, extra: J.Json) -> J.Json:
       input
 
 # the answers map Claude reads: a client that shows every question sends a
-# JSON object of question text -> answer; any other text (older clients,
-# a single button) answers the first question
-def Perm.answers.map(m: Maybe<&2, J.Json>, +input: J.Json, +answer: String) -> J.Json:
+# map (question -> answer), which the hub keeps marked (M.Answers.of); its
+# answers that are text go through. Anything else (words typed, a button,
+# an older client) answers the first question as it is, even words that
+# look like JSON
+def Perm.answers.strs(fs: J.Json) -> List<&2, J.KV>:
+  match fs:
+    case J.Field{+k, J.Str{+v}, t}:
+      J.KV{k, J.Str{v}} <> Perm.answers.strs(t)
+    case J.Field{_, _, t}:
+      Perm.answers.strs(t)
+    case _:
+      Nil{}
+
+def Perm.answers.obj(m: Maybe<&2, J.Json>, +input: J.Json, +answer: String) -> J.Json:
   match m:
     case Some{J.Obj{fs}}:
-      J.Obj{fs}
+      J.Json.obj(Perm.answers.strs(fs))
     case _:
       J.Json.obj([J.KV{Perm.question(input), J.Str{answer}}])
 
+def Perm.answers.map(m: Maybe<&2, String>, +input: J.Json, +answer: String) -> J.Json:
+  match m:
+    case Some{+json}:
+      Perm.answers.obj(J.Json.parse(json), input, answer)
+    case None{}:
+      J.Json.obj([J.KV{Perm.question(input), J.Str{answer}}])
+
 def Perm.answers(+input: J.Json, +answer: String) -> J.Json:
-  Perm.answers.k(input, J.Json.obj([J.KV{"answers", Perm.answers.map(Bool.pick(Maybe<&2, J.Json>, String.starts_with(answer, "{"), J.Json.parse(answer), None{}), input, answer)}]))
+  Perm.answers.k(input, J.Json.obj([J.KV{"answers", Perm.answers.map(M.Answers.of(answer), input, answer)}]))
 
 def Perm.verdict.k(i: Nat, +tool: String, +input: J.Json, +answer: String) -> J.Json:
   match i:

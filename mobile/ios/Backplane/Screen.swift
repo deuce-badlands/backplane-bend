@@ -118,6 +118,34 @@ struct Ask: Decodable, Identifiable {
     let questions: [AskQuestion]?
 }
 
+// The agent's questions in the composer's place (src/mobile/dock.bend):
+// every answer, pick and word is Bend's; the dock draws them and sends
+// q-pick, q-own, q-discuss, q-go and q-send
+struct Dock: Decodable, Equatable {
+    let id: String
+    // the question shown
+    let at: Int
+    let questions: [DockQuestion]
+    // every question answered; the answers already sent
+    let ready, sent: Bool
+    let discuss, discussNote: String
+}
+
+struct DockQuestion: Decodable, Equatable {
+    let question, header: String
+    let multi: Bool
+    let options: [DockOption]
+    // words of the person's own, and whether the answer is them ("own"),
+    // a talk first ("discuss") or the options picked ("")
+    let own, mode: String
+    let answered: Bool
+}
+
+struct DockOption: Decodable, Equatable {
+    let label, description: String
+    let recommended, on: Bool
+}
+
 struct AskQuestion: Decodable, Hashable {
     let question: String
     let header: String?
@@ -320,6 +348,8 @@ struct ThreadView: Decodable {
     // the agent's own subagents at work: what each does now
     let agents: [String]?
     let asks: [Ask]?
+    // the first ask with questions, as the dock shows it
+    let dock: Dock?
     let skills: [Skill]?
     let btw: Btw?
     // what the next message attaches, and what is still uploading (chunk:

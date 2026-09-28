@@ -1101,6 +1101,17 @@ def Setting.get(s: State, +k: String, d: String) -> String:
 
 # The "restart.continue" setting: after a restart, a turn the restart cut
 # short goes on by itself (on unless "off"; hub.bend's Carry)
+# The answers to an agent's questions (AskUserQuestion), as a client that
+# shows every question sends them (a map, question -> answer): the hub
+# keeps them as the ask's answer behind this mark, so words typed as an
+# answer are never read as a map, however they look
+def Answers.mark() -> String:
+  "\u{1e}answers "
+
+# the map's JSON when the answer is one (None: words, for the first question)
+def Answers.of(+answer: String) -> Maybe<&2, String>:
+  Bool.pick(Maybe<&2, String>, String.starts_with(answer, Answers.mark()), Some{String.drop(answer, 9n)}, None{})
+
 def Carry.on(+s: State) -> Bool:
   Bool.not(String.eq(Setting.get(s, "restart.continue", "on"), "off"))
 

@@ -1114,6 +1114,18 @@ def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +a
     case M.Ask{_, _, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 
+# an answer as a client sends it: words ("answer"), or every question's
+# answer at once ("answers", a map), kept behind M.Answers.mark()
+def Hub.answer.of.k(m: Maybe<&2, J.Json>, +p: J.Json) -> String:
+  match m:
+    case Some{J.Obj{fs}}:
+      M.Answers.mark() ++ J.Json.show(J.Obj{fs})
+    case _:
+      J.Json.get_str(p, "answer", "")
+
+def Hub.answer.of(+p: J.Json) -> String:
+  Hub.answer.of.k(J.Json.get(p, "answers"), p)
+
 def Hub.answer(+s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   Hub.answer.k(Ask.find(M.Asks.all(s), ask), s, now, client, id, ask, answer)
 
@@ -1394,7 +1406,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 17n:
       Step.outs([Reply.ok(client, id), KiCadInstall{}])
     case 18n:
-      Hub.answer(s, now, client, id, J.Json.get_str(p, "id", ""), J.Json.get_str(p, "answer", ""))
+      Hub.answer(s, now, client, id, J.Json.get_str(p, "id", ""), Hub.answer.of(p))
     case 19n:
       Device.register(now, client, id, p)
     case 20n:

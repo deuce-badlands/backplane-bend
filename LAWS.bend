@@ -48,6 +48,7 @@ import ./src/core/badge.bend as BG
 
 import ./src/mobile/picker.bend as MP
 import ./src/mobile/hubs.bend as Hb
+import ./src/mobile/dock.bend as MDK
 import ./src/core/hier.bend as HI
 
 import ./src/core/boot.bend as BT
@@ -2032,13 +2033,46 @@ law ask_makes_pending:
   {H.Hub.pending(H.Hub.thread(M.State.replay(H.Pend.fix(M.State.replay(H.Rec.demo.base(), M.State.empty()), [M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", "", 3n}]), M.State.replay(H.Rec.demo.base(), M.State.empty())), "t1")) == 1n : Nat}
 
 # an AskUserQuestion answer: a client that shows every question sends a
-# JSON object and every question gets its answer; any other text still
-# answers the first question
+# map, which the hub keeps marked, and every question gets its answer;
+# words (typed, or a button) answer the first question as they are, even
+# words that look like JSON; only the map's text answers go through
 law perm_answers_every_question:
-  {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}]), J.Json.obj([J.KV{"question", J.Str{"Q2"}}])])}]), "{\"Q1\":\"a\",\"Q2\":\"b\"}"), "answers"), "Q2", "") == "b" : String}
+  {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}]), J.Json.obj([J.KV{"question", J.Str{"Q2"}}])])}]), M.Answers.mark() ++ "{\"Q1\":\"a\",\"Q2\":\"b\"}"), "answers"), "Q2", "") == "b" : String}
 
 law perm_answers_text_first:
   {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}])])}]), "tea"), "answers"), "Q1", "") == "tea" : String}
+
+law perm_answers_words_like_json:
+  {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}])])}]), "{\"baud\": 115200}"), "answers"), "Q1", "") == "{\"baud\": 115200}" : String}
+
+law perm_answers_only_text:
+  {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}]), J.Json.obj([J.KV{"question", J.Str{"Q2"}}])])}]), M.Answers.mark() ++ "{\"Q1\":\"a\",\"Q2\":3}"), "answers"), "Q2", "none") == "none" : String}
+
+# the phones' question dock (src/mobile/dock.bend): Claude's
+# "(Recommended)" marks the option picked to start with and is left out of
+# its label and the answer; picked options answer in their own order;
+# words are trimmed; "Discuss this" asks for the trade-offs; blank words
+# are no answer
+law dock_label_unmarked:
+  {MDK.MDock.label("TPS62840 (Recommended)") == "TPS62840" : String}
+
+law dock_recommended_first:
+  {MDK.MDock.show(MDK.MDock.first(J.Json.obj([J.KV{"question", J.Str{"Q"}}, J.KV{"options", J.Json.arr([J.Json.obj([J.KV{"label", J.Str{"A"}}]), J.Json.obj([J.KV{"label", J.Str{"B (Recommended)"}}]), J.Json.obj([J.KV{"label", J.Str{"C"}}])])}]))) == "1" : String}
+
+law dock_answer_in_option_order:
+  {MDK.MDock.answer(J.Json.obj([J.KV{"question", J.Str{"Q"}}, J.KV{"options", J.Json.arr([J.Json.obj([J.KV{"label", J.Str{"A"}}]), J.Json.obj([J.KV{"label", J.Str{"B (Recommended)"}}]), J.Json.obj([J.KV{"label", J.Str{"C"}}])])}]), [2n, 0n], "", "") == "A, C" : String}
+
+law dock_answer_recommended_unmarked:
+  {MDK.MDock.answer(J.Json.obj([J.KV{"question", J.Str{"Q"}}, J.KV{"options", J.Json.arr([J.Json.obj([J.KV{"label", J.Str{"A"}}]), J.Json.obj([J.KV{"label", J.Str{"B (Recommended)"}}]), J.Json.obj([J.KV{"label", J.Str{"C"}}])])}]), [1n], "", "") == "B" : String}
+
+law dock_answer_own_trimmed:
+  {MDK.MDock.answer(J.Json.obj([J.KV{"question", J.Str{"Q"}}, J.KV{"options", J.Json.arr([J.Json.obj([J.KV{"label", J.Str{"A"}}]), J.Json.obj([J.KV{"label", J.Str{"B (Recommended)"}}]), J.Json.obj([J.KV{"label", J.Str{"C"}}])])}]), [1n], "  our part \n", "own") == "our part" : String}
+
+law dock_answer_discuss:
+  {MDK.MDock.answer(J.Json.obj([J.KV{"question", J.Str{"Q"}}, J.KV{"options", J.Json.arr([J.Json.obj([J.KV{"label", J.Str{"A"}}]), J.Json.obj([J.KV{"label", J.Str{"B (Recommended)"}}]), J.Json.obj([J.KV{"label", J.Str{"C"}}])])}]), Nil{}, "", "discuss") == MDK.MDock.discuss() : String}
+
+law dock_blank_words_unanswered:
+  {MDK.MDock.answered([1n], "   ", "own") == False{} : Bool}
 
 law answer_clears_pending:
   {H.Hub.pending(H.Hub.thread(M.State.replay(H.Pend.fix(H.Rec.demo(M.Completed{}), [M.AskClosed{"a1", "allow", 4n}]), H.Rec.demo(M.Completed{})), "t1")) == 0n : Nat}

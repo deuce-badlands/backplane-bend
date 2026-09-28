@@ -931,9 +931,10 @@ struct ThreadScreen: View {
     // the agent's questions wait while the person types a message instead
     @State private var typingInstead = false
 
-    // the agent's questions take the composer's place (QuestionDock)
-    private var docked: Ask? {
-        (thread.asks ?? []).first { $0.kind == "input" && !($0.questions ?? []).isEmpty }
+    // the agent's questions take the composer's place (QuestionDock; the
+    // screen's dock is the first ask with questions)
+    private var docked: Dock? {
+        thread.dock.flatMap { $0.questions.isEmpty ? nil : $0 }
     }
 
     var body: some View {
@@ -1038,7 +1039,7 @@ struct ThreadScreen: View {
             }
             ComposerExtras(model: model, thread: thread)
             if let q = docked, !typingInstead {
-                QuestionDock(model: model, ask: q) { typingInstead = true }
+                QuestionDock(model: model, dock: q) { typingInstead = true }
             } else {
                 if docked != nil {
                     Button { typingInstead = false } label: {

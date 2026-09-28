@@ -7,6 +7,7 @@ import ./screen.bend as S
 import ./notify.bend as N
 import ./view.bend as VW
 import ./picker.bend as PK
+import ./dock.bend as DK
 import ../core/botui.bend as BU
 import ../core/bot.bend as BT
 import ../core/once.bend as O
@@ -133,6 +134,7 @@ def Q.cand(q: Q4) -> QN:
       Bool.pick(QN, Q.two(a, b, 97, 116), QN{"attaching", 1n},
       Bool.pick(QN, Q.two(a, b, 109, 101), QN{"menu", 1n},
       Bool.pick(QN, Q.two(a, b, 100, 105), QN{"diff", 1n},
+      Bool.pick(QN, Q.two(a, b, 100, 111), QN{"dock", 1n},
       Bool.pick(QN, Q.two(a, b, 116, 101), QN{"term", 1n},
       Bool.pick(QN, Q.two(a, b, 116, 104), QN{"thread", 2n},
       Bool.pick(QN, Q.two(a, b, 115, 107), QN{"skills", 1n},
@@ -140,7 +142,7 @@ def Q.cand(q: Q4) -> QN:
       Bool.pick(QN, Bool.and(Q.two(a, b, 115, 101), U32.is_eq(c, 108)), QN{"sel", 2n},
       Bool.pick(QN, Bool.and(Q.two(a, b, 110, 101), U32.is_eq(d, 66)), QN{"newBot", 1n},
       Bool.pick(QN, Bool.and(Q.two(a, b, 110, 101), U32.is_eq(d, 82)), QN{"newRoom", 1n},
-      Bool.pick(QN, Q.two(a, b, 105, 100), QN{"id", 2n}, QN{"", 0n})))))))))))))))))))))
+      Bool.pick(QN, Q.two(a, b, 105, 100), QN{"id", 2n}, QN{"", 0n}))))))))))))))))))))))
 
 def Q.kind.k(n: QN, +k: String) -> Nat:
   match n:
@@ -186,8 +188,9 @@ def One.close(+u: U.Ui, +k: String) -> U.Ui:
 # "picker-mkdir" makes a folder and goes into it; "find-open" opens
 # thread search ("search") or the file picker ("files", which asks for the
 # thread's files), "find-q" sets its query, "find-close" closes it; "form-close" shuts a bot
-# form ("@bnew", "@rnew", "@onew"; the phones' cancel); any action that moves to another project re-aims
-# the viewer
+# form ("@bnew", "@rnew", "@onew"; the phones' cancel); "q-pick", "q-own",
+# "q-discuss", "q-go" and "q-send" answer an agent's questions (dock.bend);
+# any action that moves to another project re-aims the viewer
 def One.find(files: Bool, +u: U.Ui, +mode: String) -> U.Act:
   match files:
     case True{}:
@@ -229,11 +232,21 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
       VW.View.mech.act(u, action, value, "mech")
     case 15n:
       VW.View.mech.act(u, action, value, "renders")
+    case 16n:
+      DK.MDock.pick(u, value)
+    case 17n:
+      DK.MDock.own.act(u, value)
+    case 18n:
+      DK.MDock.discuss.act(u, value)
+    case 19n:
+      DK.MDock.go(u, value)
+    case 20n:
+      DK.MDock.send(u, value)
     case _:
       VW.View.sync(U.Ui.act(u, action, value))
 
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
-  One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders"], action), u, action, value)
+  One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "q-pick", "q-own", "q-discuss", "q-go", "q-send"], action), u, action, value)
 
 # what a step does to one hub's client
 type Op is Data:

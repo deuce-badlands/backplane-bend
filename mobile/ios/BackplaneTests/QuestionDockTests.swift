@@ -2,62 +2,68 @@ import Foundation
 import Testing
 @testable import Backplane
 
-// The question dock's answers: what each choice sends, as AskUserQuestion's
-// answers map (question text -> answer).
-@Suite("Question dock")
+// The question dock as the app gets it: the dock bridge.js puts on the
+// thread's screen (src/mobile/dock.bend decides it; test/mdock_test.bend
+// and the dock laws check what it decides), and what its actions ask the
+// hub for, read back from their CBOR.
+@Suite("Question dock", .serialized)
 struct QuestionDockTests {
-    private let regulator = AskQuestion(question: "Which regulator?", header: "Regulator", multiSelect: false, options: [
-        AskOption(label: "TPS62840 (Recommended)", description: "Lowest quiescent current."),
-        AskOption(label: "TPS62162", description: nil),
-    ])
-    private let rails = AskQuestion(question: "Which rails?", header: nil, multiSelect: true, options: [
-        AskOption(label: "3V3", description: nil), AskOption(label: "1V8", description: nil), AskOption(label: "5V", description: nil),
-    ])
-
-    @Test("the Recommended marker is a badge, not part of the answer")
-    func marker() {
-        #expect(QuestionDock.split("TPS62840 (Recommended)") == ("TPS62840", true))
-        #expect(QuestionDock.split("TPS62162") == ("TPS62162", false))
-        #expect(QuestionDock.split("(Recommended) First") == ("First", true))
+    private func scene() throws -> (Bridge, Fixture) {
+        let f = try Fixture.load("thread-question")
+        let b = Bridge()
+        _ = b.play(f)
+        return (b, f)
     }
 
-    @Test("the recommended option is picked to start with")
-    func recommended() {
-        #expect(QuestionDock.recommended(regulator) == .options([0]))
-        #expect(QuestionDock.recommended(rails) == nil)
+    private func dock(_ text: String) throws -> Dock {
+        let out = try JSONDecoder().decode(Out.self, from: Data(text.utf8))
+        return try #require(out.screen?.thread?.dock, "no dock on the thread's screen")
     }
 
-    @Test("an answer: the options' labels, in their order")
-    func options() {
-        #expect(QuestionDock.answer(regulator, .options([0]), own: nil) == "TPS62840")
-        #expect(QuestionDock.answer(rails, .options([2, 0]), own: nil) == "3V3, 5V")
-        // an index past the options (a stale choice) is left out
-        #expect(QuestionDock.answer(rails, .options([1, 9]), own: nil) == "1V8")
+    @Test("the dock: its questions, the recommended option picked")
+    func shown() throws {
+        let (b, _) = try scene()
+        let d = try dock(b.call("screen", []))
+        #expect(d.id == "k1")
+        #expect(d.at == 0)
+        #expect(d.questions.map(\.header) == ["Regulator", "Power good", "Placement"])
+        #expect(d.questions[0].options.map(\.label) == ["TPS62840", "TPS62162", "AP62300"])
+        #expect(d.questions[0].options.map(\.recommended) == [true, false, false])
+        #expect(d.questions[0].options.map(\.on) == [true, false, false])
+        #expect(d.questions[1].multi)
+        #expect(!d.questions[1].answered)
+        #expect(!d.ready && !d.sent)
     }
 
-    @Test("own words, trimmed; discuss; nothing")
-    func others() {
-        #expect(QuestionDock.answer(regulator, .own, own: "  the one we stock \n") == "the one we stock")
-        #expect(QuestionDock.answer(regulator, .discuss, own: nil) == QuestionDock.discussAnswer)
-        #expect(QuestionDock.answer(regulator, nil, own: nil) == "")
+    @Test("picks, words and discuss come back on the screen")
+    func actions() throws {
+        let (b, _) = try scene()
+        #expect(try dock(b.call("act", ["q-pick", "k1|1|2"])).questions[1].options.map(\.on) == [false, false, true])
+        let own = try dock(b.call("act", ["q-own", "k1|0|the one we stock"])).questions[0]
+        #expect(own.mode == "own" && own.own == "the one we stock")
+        #expect(try dock(b.call("act", ["q-own", "k1|0|"])).questions[0].options.map(\.on) == [true, false, false])
+        #expect(try dock(b.call("act", ["q-discuss", "k1|2"])).questions[2].mode == "discuss")
+        #expect(try dock(b.call("act", ["q-go", "k1|2"])).at == 2)
+        #expect(try dock(b.call("screen", [])).ready)
     }
 
-    @Test("what counts as answered")
-    func answered() {
-        #expect(QuestionDock.answered(.options([1]), own: nil))
-        #expect(!QuestionDock.answered(.options([]), own: nil))
-        #expect(!QuestionDock.answered(.own, own: "   "))
-        #expect(QuestionDock.answered(.own, own: "x"))
-        #expect(QuestionDock.answered(.discuss, own: nil))
-        #expect(!QuestionDock.answered(nil, own: "typed but not chosen"))
-    }
-
-    @Test("the answer action: the ask, then every answer as JSON")
-    func reply() throws {
-        let ask = Ask(id: "k1", kind: "input", head: "", detail: "", blocks: [], buttons: [], questions: [regulator, rails])
-        let v = try #require(QuestionDock.reply(ask, choices: [0: .own, 1: .options([0, 1])], own: [0: "TPS62840 or better"]))
-        #expect(v.hasPrefix("k1|"))
-        let json = try #require(try JSONSerialization.jsonObject(with: Data(v.dropFirst(3).utf8)) as? [String: String])
-        #expect(json == ["Which regulator?": "TPS62840 or better", "Which rails?": "3V3, 1V8"])
+    @Test("Send asks the hub once, with every answer")
+    func send() throws {
+        let (b, f) = try scene()
+        _ = b.call("act", ["q-pick", "k1|1|0"])
+        _ = b.call("act", ["q-pick", "k1|1|1"])
+        let out = try JSONDecoder().decode(Out.self, from: Data(b.call("act", ["q-send", "k1"]).utf8))
+        let sends = out.cmds.filter { $0.type == "send" }
+        #expect(sends.count == 1)
+        #expect(sends.first?.hub == f.hub)
+        let frame = try #require(sends.first.flatMap { Data(base64Encoded: $0.data ?? "") }.flatMap(CBOR.decode))
+        let texts = CBOR.strings(frame)
+        #expect(texts.contains("k1"))
+        #expect(texts.contains("TPS62840"))
+        #expect(texts.contains("3V3, 1V8"))
+        #expect(texts.contains("Top, beside U7"))
+        #expect(try dock(b.call("screen", [])).sent)
+        let again = try JSONDecoder().decode(Out.self, from: Data(b.call("act", ["q-send", "k1"]).utf8))
+        #expect(again.cmds.filter { $0.type == "send" }.isEmpty)
     }
 }
