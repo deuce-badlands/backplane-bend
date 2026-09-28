@@ -7,6 +7,8 @@ import Foundation
 struct Fixture {
     enum Step {
         case recv([String: Any])
+        // a frame as the hub's own encoder wrote it (its dictionaries' keys and words)
+        case wire(Data)
         case act(String, String)
         // what a hub sent a phone watching the viewer's sample (Viewer/<kind>.capture)
         case capture(String)
@@ -33,6 +35,7 @@ struct Fixture {
         let o = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
         let steps: [Step] = (o["steps"] as? [[String: Any]] ?? []).compactMap { s in
             if let f = s["recv"] as? [String: Any] { return .recv(f) }
+            if let w = s["wire"] as? String, let d = Data(base64Encoded: w) { return .wire(d) }
             if let a = s["act"] as? [String], a.count == 2 { return .act(a[0], a[1]) }
             if let k = s["capture"] as? String { return .capture(k) }
             return nil
@@ -53,6 +56,7 @@ struct Fixture {
         for s in steps {
             switch s {
             case .recv(let f): app.append(.recv(CBOR.encode(f)))
+            case .wire(let d): app.append(.recv(d))
             case .act(let a, let v): app.append(.act(a, v))
             case .capture(let k): app += try Self.captured(k).map { .frame($0) }
             }

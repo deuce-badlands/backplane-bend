@@ -10,8 +10,8 @@ import Testing
 struct SceneDecodingTests {
     @Test("the scenes are in the bundle")
     func bundled() {
-        // test/apple_fixtures.bend writes ten
-        #expect(Fixture.names.count == 10, "\(Fixture.names)")
+        // test/apple_fixtures.bend writes eleven
+        #expect(Fixture.names.count == 11, "\(Fixture.names)")
     }
 
     @Test("every answer decodes", arguments: Fixture.names)
@@ -24,5 +24,20 @@ struct SceneDecodingTests {
             let out = try JSONDecoder().decode(Out.self, from: Data(text.utf8))
             #expect(out.screen != nil, "answer \(i) of \(name) has no screen")
         }
+    }
+
+    // The tests' own encoder writes every key and string out; a hub sends
+    // its dictionaries' indexes. The same frame both ways gives the same
+    // screens, so the scenes stand for what a hub really sends.
+    @Test("the hub's own encoding reads as the tests' does")
+    func hubEncoding() throws {
+        let plain = try Bridge().play(Fixture.load("projects"))
+        let wire = try Bridge().play(Fixture.load("projects-wire"))
+        #expect(wire.count == plain.count)
+        #expect(wire == plain)
+        // and the frame did use the dictionaries: its first key is an index
+        let f = try Fixture.load("projects-wire")
+        guard case .wire(let d)? = f.steps.first else { Issue.record("projects-wire has no wire step"); return }
+        #expect(d.count > 2 && d[d.startIndex + 1] == 0x01, "the frame's first key is not \"t\"'s index")
     }
 }

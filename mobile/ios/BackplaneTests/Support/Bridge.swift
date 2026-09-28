@@ -99,6 +99,7 @@ final class Bridge: @unchecked Sendable {
         for s in f.steps {
             switch s {
             case .recv(let frame): out.append(recv(f.hub, frame))
+            case .wire(let d): out.append(call("recv", [f.hub, d.base64EncodedString()]))
             case .act(let a, let v): out.append(call("act", [a, v]))
             // plots go to the viewer, never through bridge.js
             case .capture(let k):
