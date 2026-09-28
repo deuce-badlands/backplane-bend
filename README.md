@@ -1,0 +1,1 @@
+Snapshot images for deuce-badlands/backplane-bend#1, recorded by scripts/test-apple.sh (the references are not checked in). The viewer images show KiCad's RoyalBlue54L Feather demo (CERN-OHL-P v2; CC BY-SA 4.0).
