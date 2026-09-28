@@ -335,7 +335,8 @@
           "pair": "backplane://pair?url=http%3A%2F%2F100.64.0.7%3A3787&token=7f3a9c21e5",
           "kicad.cli": "",
           "kicad.fork": "",
-          "kicad.commit": ""
+          "kicad.commit": "",
+          "freecad": ""
         }
       }
     },

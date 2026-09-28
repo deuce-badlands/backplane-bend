@@ -1239,7 +1239,9 @@ struct PlotScreen: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .fixedSize()
+                // (at its own width where there is room; a phone's narrower bar shares it)
+                .frame(maxWidth: 360)
+                .layoutPriority(-1)
                 Spacer(minLength: 0)
                 // the viewer's own light or dark ground
                 Button { model.act("vw-light") } label: { Image(systemName: viewer.light == true ? "moon" : "sun.max") }

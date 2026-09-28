@@ -35,8 +35,9 @@ def Mock.models(+grok: Bool) -> String:
   "\"codex\":{\"cli\":\"codex-cli 0.157.1\",\"labels\":{\"default\":\"Codex's configured default\",\"gpt-6-astra\":\"GPT-6-Astra · Frontier intelligence for the most demanding work.\",\"gpt-5.6-luna\":\"GPT-5.6-Luna · Older fast and efficient model.\"}}," ++
   "\"grok\":{\"cli\":\"" ++ Bool.pick(String, grok, "grok 0.9.2", "") ++ "\",\"labels\":{}}}}"
 
-# the settings screen's facts about the machine: kicad-cli found or not, the
-# Backplane KiCad fork or not, updated by a package or from releases
+# the settings screen's facts about the machine: kicad-cli (and FreeCAD)
+# found or not, the Backplane KiCad fork or not, updated by a package or
+# from releases
 type MockMachine is Data:
   MockMachine{kicad: Bool, fork: Bool, package: Bool, grok: Bool}
 
@@ -45,14 +46,15 @@ def Mock.machine() -> MockMachine:
 
 def Mock.info(m: MockMachine) -> J.Json:
   match m:
-    case MockMachine{kicad, fork, package, grok}:
+    case MockMachine{+kicad, fork, package, grok}:
       J.Json.obj([J.KV{"home", J.Json.str("/home/ada/.backplane")}, J.KV{"listen", J.Json.str("0.0.0.0:3787")},
         J.KV{"models", J.Json.str(Mock.models(grok))},
         J.KV{"machines", J.Json.str("{\"self\":{\"name\":\"workbench\",\"url\":\"http://100.64.0.7:3787\",\"domain\":\"workbench.tail2f3e.ts.net\"},\"peers\":[]}")},
         J.KV{"tailnet", J.Json.str("on")}, J.KV{"update", J.Json.str(Bool.pick(String, package, "package", "releases"))},
         J.KV{"pair", J.Json.str("backplane://pair?url=http%3A%2F%2F100.64.0.7%3A3787&token=7f3a9c21e5")},
         J.KV{"kicad.cli", J.Json.str(Bool.pick(String, kicad, "/usr/bin/kicad-cli", ""))},
-        J.KV{"kicad.fork", J.Json.str(Bool.pick(String, fork, "10.0.6-bp3", ""))}, J.KV{"kicad.commit", J.Json.str("")}])
+        J.KV{"kicad.fork", J.Json.str(Bool.pick(String, fork, "10.0.6-bp3", ""))}, J.KV{"kicad.commit", J.Json.str("")},
+        J.KV{"freecad", J.Json.str(Bool.pick(String, kicad, "/usr/bin/freecadcmd", ""))}])
 
 # The projects, threads and their history
 # -----------------------------------------

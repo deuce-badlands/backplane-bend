@@ -92,7 +92,7 @@ struct SceneContentTests {
     func settings() async throws {
         let (_, s) = try await screen("settings")
         let st = try #require(s.settings)
-        #expect(st.sections?.map(\.title) == ["Threads", "Agents", "Writing", "KiCad", "Appearance", "Network", "Voice"])
+        #expect(st.sections?.map(\.title) == ["Threads", "Agents", "Writing", "CAD", "Appearance", "Network", "Voice"])
         #expect(st.sections?.contains { $0.attention } == false)
         let key = try #require(st.rows.first { $0.label == "OpenAI API key" })
         #expect(key.kind == "field")
@@ -106,7 +106,7 @@ struct SceneContentTests {
     func attention() async throws {
         let (_, s) = try await screen("settings-attention")
         let st = try #require(s.settings)
-        #expect(st.sections?.filter(\.attention).map(\.title) == ["KiCad", "Network", "Voice"])
+        #expect(st.sections?.filter(\.attention).map(\.title) == ["CAD", "Network", "Voice"])
         #expect(st.rows.first { $0.label == "KiCad CLI" }?.tone == "warn")
         #expect(st.rows.first { $0.label == "KiCad IPC" }?.buttons.map(\.action) == ["kicad-install"])
         #expect(st.rows.first { $0.label.hasPrefix("Backplane ") }?.buttons.map(\.action) == ["update"])
@@ -119,7 +119,7 @@ struct SceneContentTests {
         let (m, s) = try await screen("viewer-" + kind)
         let v = try #require(s.thread?.viewer)
         #expect(v.open == kind)
-        #expect(v.choices.map(\.value) == ["board", "schematic", "3d"])
+        #expect(v.choices.map(\.value) == ["board", "schematic", "3d", "mech"])
         // the layers' plot, for the source on screen (3D draws the board's layers on its faces)
         let f = try #require(m.plots.frame, "no plot arrived")
         #expect(f.key == v.layers)

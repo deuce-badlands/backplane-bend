@@ -129,25 +129,25 @@ def main() -> IO(Unit):
     C.Check.str("flag opens", closed(opened(good())), "open")
     C.Check.str("flag again closes", closed(act(opened(good()), "flag", "settings")), "closed")
     # the sections, in the native window's order, with what each has set
-    C.Check.str("sections", sections(answered(good(), True{}), "title"), "Threads;Agents;Writing;KiCad;Appearance;Network;Voice;")
+    C.Check.str("sections", sections(answered(good(), True{}), "title"), "Threads;Agents;Writing;CAD;Appearance;Network;Voice;")
     C.Check.str("summaries", sections(answered(good(), True{}), "summary"),
-      "Settle 5 days · Steer;Claude · Opus 5.5;Claude · Haiku 4.5;Found;Dark;Stable;Key saved;")
+      "Settle 5 days · Steer;Claude · Opus 5.5;Claude · Haiku 4.5;KiCad found · FreeCAD found;Dark · Projects;Stable;Key saved;")
     C.Check.str("nothing needs you", attention(answered(good(), True{})), "0000000")
     C.Check.str("no key needs you", attention(answered(good(), False{})), "0000001")
     C.Check.str("before the hub answers, no key", sections(opened(good()), "summary"),
-      "Settle 5 days · Steer;Claude · Opus 5.5;Claude · Haiku 4.5;Found;Dark;Stable;No key;")
+      "Settle 5 days · Steer;Claude · Opus 5.5;Claude · Haiku 4.5;KiCad found · FreeCAD found;Dark · Projects;Stable;No key;")
     C.Check.str("no kicad-cli needs you", attention(answered(bare(), True{})), "0001000")
     C.Check.str("an update needs you", attention(recv(answered(good(), True{}), update())), "0000010")
     C.Check.str("an update in the summary", sections(recv(answered(good(), True{}), update()), "summary"),
-      "Settle 5 days · Steer;Claude · Opus 5.5;Claude · Haiku 4.5;Found;Dark;Stable · update;Key saved;")
+      "Settle 5 days · Steer;Claude · Opus 5.5;Claude · Haiku 4.5;KiCad found · FreeCAD found;Dark · Projects;Stable · update;Key saved;")
     # every row: its section and the control it is
     C.Check.str("rows", rows(answered(good(), True{}), "label"),
-      "Settle after;Follow-ups while a turn runs;Provider for new threads;Model for new threads;Claude Code;Codex;Grok;Provider;Model;KiCad CLI;KiCad IPC;Theme;Tailscale;Pairing link;Update channel;Backplane 0.10.0;OpenAI API key;Microphone;Dictionary;")
+      "Settle after;Follow-ups while a turn runs;Continue after a restart;Provider for new threads;Model for new threads;Claude Code;Codex;Grok;Provider;Model;KiCad CLI;KiCad IPC;FreeCAD;Theme;Thread list;Tailscale;Pairing link;Update channel;Backplane 0.10.0;OpenAI API key;Microphone;Dictionary;")
     C.Check.str("row sections", rows(answered(good(), True{}), "section"),
-      "Threads;Threads;Agents;Agents;Agents;Agents;Agents;Writing;Writing;KiCad;KiCad;Appearance;Network;Network;Network;Network;Voice;Voice;Voice;")
+      "Threads;Threads;Threads;Agents;Agents;Agents;Agents;Agents;Writing;Writing;CAD;CAD;CAD;Appearance;Appearance;Network;Network;Network;Network;Voice;Voice;Voice;")
     C.Check.str("kinds", rows(answered(good(), True{}), "kind"),
-      "stepper;choice;choice;menu;status;status;status;choice;menu;status;switch;choice;status;status;choice;status;field;menu;field;")
-    C.Check.str("only the CLIs are grouped", rows(answered(good(), True{}), "group"), ";;;;Installed;Installed;Installed;;;;;;;;;;;;;")
+      "stepper;choice;switch;choice;menu;status;status;status;choice;menu;status;switch;status;choice;choice;status;status;choice;status;field;menu;field;")
+    C.Check.str("only the CLIs are grouped", rows(answered(good(), True{}), "group"), ";;;;;Installed;Installed;Installed;;;;;;;;;;;;;;;")
     # Threads
     C.Check.str("stepper value", get(answered(good(), True{}), "Settle after", "value"), "5 days")
     C.Check.str("stepper steps", buttons(answered(good(), True{}), "Settle after", "value"), "settle.days=4;settle.days=6;")
@@ -175,9 +175,15 @@ def main() -> IO(Unit):
     C.Check.str("ipc on", on(answered(good(), True{}), "KiCad IPC"), "10")
     C.Check.str("ipc turned off", on(set(answered(good(), True{}), "kicad.ipc", "off"), "KiCad IPC"), "01")
     C.Check.str("ipc without the fork", get(answered(bare(), True{}), "KiCad IPC", "kind") ++ "/" ++ buttons(answered(bare(), True{}), "KiCad IPC", "action"), "status/kicad-install;")
+    # Threads, from upstream: turns a restart cuts short carry on
+    C.Check.str("continue after a restart", buttons(answered(good(), True{}), "Continue after a restart", "label") ++ "/" ++ on(answered(good(), True{}), "Continue after a restart"), "On;Off;/10")
+    C.Check.str("continue turned off", on(set(answered(good(), True{}), "restart.continue", "off"), "Continue after a restart"), "01")
+    C.Check.str("freecad found", get(answered(good(), True{}), "FreeCAD", "value") ++ "/" ++ get(answered(good(), True{}), "FreeCAD", "tone"), "Found/ok")
+    C.Check.str("freecad missing", get(answered(bare(), True{}), "FreeCAD", "value"), "Not found")
     # Appearance
     C.Check.str("themes", buttons(answered(good(), True{}), "Theme", "label"), "System;Dark;Light;")
     C.Check.str("theme chosen", on(answered(good(), True{}), "Theme"), "010")
+    C.Check.str("thread list", buttons(answered(good(), True{}), "Thread list", "value") ++ "/" ++ on(answered(good(), True{}), "Thread list"), "sidebar.view=projects;sidebar.view=active;/10")
     # Network
     C.Check.str("tailscale", get(answered(good(), True{}), "Tailscale", "value"), "on")
     C.Check.str("pairing copies", buttons(answered(good(), True{}), "Pairing link", "action"), "copy;")

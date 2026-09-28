@@ -414,6 +414,7 @@ private struct ThreadRow: View {
     let model: AppModel
     let row: Row
     let choose: (Swipe) -> Void
+    @Environment(\.splitLayout) private var split
 
     var body: some View {
         HStack(spacing: 10) {
@@ -427,7 +428,8 @@ private struct ThreadRow: View {
             Spacer()
             if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
             Text(row.ago).font(.caption).foregroundStyle(.secondary)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            // (a sidebar selects in place: nothing to push)
+            if !split { Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) }
         }
         .contentShape(Rectangle())
         .opacity(row.faded == true ? 0.45 : 1)
