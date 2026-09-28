@@ -54,31 +54,39 @@ struct BotsSection: View {
                     HStack(spacing: 12) {
                         BotCat(model: model, key: b.cat, size: 36)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(b.name).foregroundStyle(.primary)
+                            // the label's own colours (in a button, .primary is its tint)
+                            Text(b.name).foregroundStyle(Color.primary)
                             HStack(spacing: 5) {
                                 MoodDot(mood: b.mood)
                                 Text([b.note, b.peer, b.machine ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
                                     .lineLimit(1)
                             }
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.secondary)
                         }
                         Spacer()
                         if !split { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                     }
                 }
                 .opacity(b.mood == "away" ? 0.5 : 1)
+                #if os(macOS)
+                // a row, as the threads above are, not a bordered button
+                .buttonStyle(.plain)
+                #endif
             }
             ForEach(screen.rooms) { r in
                 Button { model.act("room", r.id) } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "bubble.left.and.bubble.right").frame(width: 36).foregroundStyle(.secondary)
-                        Text(r.name).foregroundStyle(.primary)
+                        Text(r.name).foregroundStyle(Color.primary)
                         Spacer()
                         Label("\(r.members)", systemImage: "person.2").font(.caption).foregroundStyle(.secondary)
                         if !split { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                     }
                 }
+                #if os(macOS)
+                .buttonStyle(.plain)
+                #endif
             }
         } header: {
             HStack {

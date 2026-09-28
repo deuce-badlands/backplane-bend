@@ -62,6 +62,8 @@ struct Fixture {
             }
         }
         await m.replay(hub: hub, now: now, steps: app)
+        // the bots' cats, which the list asks for once it is on screen
+        for b in m.screen?.bots ?? [] { await m.cat(b.cat) }
         // plots are decoded off the main thread: wait for the viewer's (and
         // for 3D, its model too)
         for case .capture(let k) in steps {

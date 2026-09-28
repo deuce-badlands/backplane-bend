@@ -113,7 +113,9 @@ struct SnapshotTests {
             }
         }
         #if os(iOS)
-        // a phone pushes into a section from the list
+        // a phone pushes into a section from the list (drawn by the phone's
+        // simulator only: an iPad's would write the same image at its size)
+        guard Device.here.contains(.iPhone) else { return }
         let pane = NavigationStack {
             SettingsPane(model: m, section: voice, rows: SettingsSheet.rows(of: st, in: "Voice"), header: false)
                 .navigationTitle("Voice")

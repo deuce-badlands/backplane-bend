@@ -79,7 +79,7 @@ extension RootView {
         if split {
         NavigationSplitView {
             ProjectsView(model: model, screen: s, pairing: $pairing)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 400)
+                .navigationSplitViewColumnWidth(min: 220, ideal: Platform.sidebarWidth, max: 400)
         } detail: {
             // the selection (a thread, or a bot's page) fills the column:
             // nothing to go back to, the sidebar is the way elsewhere
@@ -369,7 +369,8 @@ struct HubsFooter: View {
         }
         .buttonStyle(.plain)
         .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        // (in a VStack: a Divider on its own takes the button's row and stands upright)
+        .overlay(alignment: .top) { VStack(spacing: 0) { Divider() } }
         .help("Hubs")
     }
 

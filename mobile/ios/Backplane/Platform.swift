@@ -326,6 +326,16 @@ enum Platform {
     // host shares its container)
     static let defaults: UserDefaults = testing ? UserDefaults(suiteName: "dev.backplane.tests")! : .standard
 
+    // the sidebar's width: an iPad's screen gives thread titles more room
+    // than a Mac window starts with
+    static var sidebarWidth: CGFloat {
+        #if os(macOS)
+        260
+        #else
+        320
+        #endif
+    }
+
     static func copy(_ text: String) {
         #if os(iOS)
         UIPasteboard.general.string = text

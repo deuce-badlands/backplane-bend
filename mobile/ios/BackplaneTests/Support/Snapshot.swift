@@ -36,10 +36,13 @@ enum Device: String {
         }
     }
 
-    // the devices this platform draws
+    // the device this simulator draws: each is drawn in its own device's
+    // window (an iPad drawn in an iPhone's would take the iPhone's safe
+    // area, the Dynamic Island's 62 pt at the top)
+    @MainActor
     static var here: [Device] {
         #if os(iOS)
-        [.iPhone, .iPad]
+        UIDevice.current.userInterfaceIdiom == .pad ? [.iPad] : [.iPhone]
         #else
         [.mac]
         #endif
