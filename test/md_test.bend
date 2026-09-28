@@ -27,3 +27,5 @@ def main() -> IO(Unit):
     C.Check.str("list", shows(D.Md.render("# T\n- one\n- two")), "<h3>T</h3><ul><li>one</li><li>two</li></ul>")
     C.Check.str("stray", shows(D.Md.render("2 * 3 `x")), "<p>2 * 3 `x</p>")
     C.Check.str("html stays text", shows(D.Md.render("<b>hi</b>")), "<p><b>hi</b></p>")
+    C.Check.str("table", shows(D.Md.render("before\n| | Pads | Range |\n|---|:--:|---|\n| Chips | 2 (20) | **3** |\n| Level | ~27 dB | `x` |\nafter")), "<p>before</p><div class=mdtable><table><tr><th></th><th>Pads</th><th>Range</th></tr><tr><td>Chips</td><td>2 (20)</td><td><strong>3</strong></td></tr><tr><td>Level</td><td>~27 dB</td><td><code>x</code></td></tr></table></div><p>after</p>")
+    C.Check.str("table without header", shows(D.Md.render("| a | b |\n| c | d |")), "<div class=mdtable><table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table></div>")

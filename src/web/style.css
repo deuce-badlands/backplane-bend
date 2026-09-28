@@ -439,3 +439,9 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .voice-note.bad { border-color: var(--bad); }
 .voice-ask { border-color: var(--warn); flex-wrap: wrap; }
 .voice-ask .field { flex: 1; min-width: 12em; }
+
+/* a markdown table (Md.table): scrolls sideways when wider than the column */
+.mdtable { overflow-x: auto; margin: 4px 0; }
+.mdtable table { border-collapse: collapse; font-size: 0.95em; }
+.mdtable th, .mdtable td { text-align: left; vertical-align: top; padding: 5px 10px; border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.mdtable th { font-weight: 600; background: color-mix(in srgb, currentColor 8%, transparent); }
