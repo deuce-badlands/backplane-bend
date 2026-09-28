@@ -14,8 +14,9 @@ struct Fixture {
     let now: Int
     let steps: [Step]
 
-    // every scene, so a new one is replayed, decoded and checked with the rest
-    static let names = ["projects", "thread-review", "thread-question", "thread-done", "thread-failed", "settings", "settings-attention"]
+    // every scene in the bundle, so a new one is replayed and decoded with the rest
+    static let names: [String] = (Bundle(for: Token.self).urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
+        .map { $0.deletingPathExtension().lastPathComponent }.sorted()
 
     static func load(_ name: String) throws -> Fixture {
         guard let url = Bundle(for: Token.self).url(forResource: name, withExtension: "json") else { throw Missing(name: name) }

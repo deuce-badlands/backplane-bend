@@ -6,7 +6,7 @@ import Testing
 // The app's screens on every device, drawn from the mock hub's scenes
 // (test/mockhub.bend): the projects, a thread at work, the agent's
 // questions, a failed turn, Settings set up well and needing you, and
-// pairing. iOS draws the iPhone and iPad images, macOS the Mac's; the
+// pairing (iPhone and iPad). iOS draws the iPhone and iPad images, macOS the Mac's; the
 // images are in __Snapshots__/SnapshotTests.
 @MainActor
 @Suite("Snapshots", .serialized)
@@ -135,8 +135,10 @@ struct SnapshotTests {
         }
     }
 
+    // (not on a Mac: there PairView asks 127.0.0.1:3787 whether a hub runs
+    // on the machine, and draws whichever answer came)
     @Test("pairing")
     func pairing() {
-        for d in Device.here { assertSnapshot(NavigationStack { PairView(link: "") { _ in } }, device: d) }
+        for d in Device.here where d != .mac { assertSnapshot(NavigationStack { PairView(link: "") { _ in } }, device: d) }
     }
 }

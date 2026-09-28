@@ -8,6 +8,12 @@ import Testing
 // never changes; decoding with a throwing decoder here names the field.
 @Suite("Scenes decode", .serialized)
 struct SceneDecodingTests {
+    @Test("the scenes are in the bundle")
+    func bundled() {
+        // test/apple_fixtures.bend writes seven
+        #expect(Fixture.names.count == 7, "\(Fixture.names)")
+    }
+
     @Test("every answer decodes", arguments: Fixture.names)
     func everyAnswer(_ name: String) throws {
         let f = try Fixture.load(name)
