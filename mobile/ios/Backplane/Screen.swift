@@ -93,6 +93,20 @@ struct Ask: Decodable, Identifiable {
     let id, kind, head, detail: String
     let blocks: [Block]
     let buttons: [AskButton]
+    // an AskUserQuestion's questions as the agent sent them (nil otherwise)
+    let questions: [AskQuestion]?
+}
+
+struct AskQuestion: Decodable, Hashable {
+    let question: String
+    let header: String?
+    let multiSelect: Bool?
+    let options: [AskOption]?
+}
+
+struct AskOption: Decodable, Hashable {
+    let label: String
+    let description: String?
 }
 
 // a thread this one delegated to ("select" opens it)

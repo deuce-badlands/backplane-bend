@@ -474,10 +474,15 @@ def Mob.ask.body(plan: Bool, +d: String) -> List<&2, J.Json>:
     case False{}:
       Nil{}
 
+# every question the agent asked, as Claude sent them (header, question,
+# options with descriptions, multiSelect); null for approvals and plans
+def Mob.ask.qs(+qs: String) -> J.Json:
+  Maybe.default(&2, J.Json, Bool.pick(Maybe<&2, J.Json>, String.is_empty(qs), None{}, J.Json.parse(qs)), J.Null{})
+
 def Mob.ask(a: M.Ask, +draft: String) -> J.Json:
   match a:
-    case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
-      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str(k)},
+    case M.Ask{+id, _, +k, +tool, +d, +o, +qs, _, _}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str(k)}, J.KV{"questions", Mob.ask.qs(qs)},
         J.KV{"head", J.Json.str(Mob.ask.head(C.Codec.pos(["plan", "input"], k), tool))},
         J.KV{"detail", J.Json.str(Bool.pick(String, String.eq(k, "plan"), "", d))},
         J.KV{"blocks", J.Json.arr(Mob.ask.body(String.eq(k, "plan"), d))},

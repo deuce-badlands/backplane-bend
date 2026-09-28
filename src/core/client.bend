@@ -1630,8 +1630,8 @@ def Asks.open.go(as: List<&2, M.Ask>, +thread: String) -> List<&2, M.Ask>:
   match as:
     case Nil{}:
       Nil{}
-    case M.Ask{i, +th, k, t, d, o, +op, an} <> rest:
-      Asks.open.k(Bool.and(op, String.eq(th, thread)), M.Ask{i, th, k, t, d, o, op, an}, Asks.open.go(rest, thread))
+    case M.Ask{i, +th, k, t, d, o, qs, +op, an} <> rest:
+      Asks.open.k(Bool.and(op, String.eq(th, thread)), M.Ask{i, th, k, t, d, o, qs, op, an}, Asks.open.go(rest, thread))
 
 # what a thread's agent waits on the user for
 def Asks.open(s: M.State, +thread: String) -> List<&2, M.Ask>:
@@ -1990,7 +1990,7 @@ def Asks.kind(as: List<&2, M.Ask>, +k: String) -> Bool:
   match as:
     case Nil{}:
       False{}
-    case M.Ask{_, _, +x, _, _, _, _, _} <> t:
+    case M.Ask{_, _, +x, _, _, _, _, _, _} <> t:
       Bool.or(String.eq(x, k), Asks.kind(t, k))
 
 # what a thread's dot shows (M.Status.of has the order)

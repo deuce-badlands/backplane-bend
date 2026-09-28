@@ -176,7 +176,7 @@ type Change is Data:
   SettingSet{key: String, value: String, at: Nat}
   TurnQueued{thread: String, msg: String, text: String, at: Nat}
   QueueTaken{thread: String, at: Nat}
-  AskOpened{id: String, thread: String, kind: String, tool: String, detail: String, options: String, at: Nat}
+  AskOpened{id: String, thread: String, kind: String, tool: String, detail: String, options: String, questions: String, at: Nat}
   AskClosed{id: String, answer: String, at: Nat}
   # a phone asks for pushes (APNs/FCM); keyed by token, never sent to clients
   DeviceRegistered{token: String, platform: String, kind: String, thread: String, env: String, bundle: String, at: Nat}
@@ -476,7 +476,7 @@ type Device is Data:
   Device{token: String, platform: String, kind: String, thread: String, env: String, bundle: String, at: Nat}
 
 type Ask is Data:
-  Ask{id: String, thread: String, kind: String, tool: String, detail: String, options: String, open: Bool, answer: String}
+  Ask{id: String, thread: String, kind: String, tool: String, detail: String, options: String, questions: String, open: Bool, answer: String}
 
 # Sidebar extensions
 # ------------------
@@ -925,18 +925,18 @@ def State.setting(s: State, k: String, v: String) -> State:
   State{ps, ts, es, n, tk, Map.set(&2, String, sg, k, v), qu, ak, dv, nv, bw}
 
 def Ask.blank(id: String) -> Ask:
-  Ask{id, "", "", "", "", "", False{}, ""}
+  Ask{id, "", "", "", "", "", "", False{}, ""}
 
 def State.ask(s: State, a: Ask) -> State:
   State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
-  Ask{+id, th, k, tool, d, o, op, an} = a
-  State{ps, ts, es, n, tk, sg, qu, Map.set(&2, Ask, ak, id, Ask{id, th, k, tool, d, o, op, an}), dv, nv, bw}
+  Ask{+id, th, k, tool, d, o, qs, op, an} = a
+  State{ps, ts, es, n, tk, sg, qu, Map.set(&2, Ask, ak, id, Ask{id, th, k, tool, d, o, qs, op, an}), dv, nv, bw}
 
 def Ask.close.set(m: Map<&2, Ask>, +id: String, x: Ask, a: String) -> Map<&2, Ask>:
   match x:
-    case Ask{i, th, k, tool, d, o, True{}, _}:
-      Map.set(&2, Ask, m, id, Ask{i, th, k, tool, d, o, False{}, a})
-    case Ask{_, _, _, _, _, _, False{}, _}:
+    case Ask{i, th, k, tool, d, o, qs, True{}, _}:
+      Map.set(&2, Ask, m, id, Ask{i, th, k, tool, d, o, qs, False{}, a})
+    case Ask{_, _, _, _, _, _, _, False{}, _}:
       m
 
 def Ask.close.k(r: Map<&2, Ask> & Ask, +id: String, a: String) -> Map<&2, Ask>:
@@ -1356,8 +1356,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.enqueue(s, th, msg, text)
     case QueueTaken{th, _}:
       State.take(s, th)
-    case AskOpened{id, th, k, tool, d, o, _}:
-      State.ask(s, Ask{id, th, k, tool, d, o, True{}, ""})
+    case AskOpened{id, th, k, tool, d, o, qs, _}:
+      State.ask(s, Ask{id, th, k, tool, d, o, qs, True{}, ""})
     case AskClosed{+id, a, _}:
       State.ask.close(s, id, a)
     case DeviceRegistered{+tok, p, k, th, e, b, at}:

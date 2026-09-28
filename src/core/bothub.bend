@@ -910,7 +910,7 @@ def Bots.asks(xs: List<&2, M.Ask>, +th: String, +kind: String) -> Bool:
   match xs:
     case Nil{}:
       False{}
-    case M.Ask{_, t, k, _, _, _, open, _} <> rest:
+    case M.Ask{_, t, k, _, _, _, _, open, _} <> rest:
       Bool.or(Bool.and(open, Bool.and(String.eq(t, th), String.eq(k, kind))), Bots.asks(rest, th, kind))
 
 def Bots.status.t(t: M.Thread, +s: M.State, +th: String) -> M.Status:

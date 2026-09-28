@@ -1927,7 +1927,16 @@ law recover_empty_nothing:
 # an open ask makes its thread pending (so it never auto-settles); the
 # answer clears it
 law ask_makes_pending:
-  {H.Hub.pending(H.Hub.thread(M.State.replay(H.Pend.fix(M.State.replay(H.Rec.demo.base(), M.State.empty()), [M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 3n}]), M.State.replay(H.Rec.demo.base(), M.State.empty())), "t1")) == 1n : Nat}
+  {H.Hub.pending(H.Hub.thread(M.State.replay(H.Pend.fix(M.State.replay(H.Rec.demo.base(), M.State.empty()), [M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", "", 3n}]), M.State.replay(H.Rec.demo.base(), M.State.empty())), "t1")) == 1n : Nat}
+
+# an AskUserQuestion answer: a client that shows every question sends a
+# JSON object and every question gets its answer; any other text still
+# answers the first question
+law perm_answers_every_question:
+  {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}]), J.Json.obj([J.KV{"question", J.Str{"Q2"}}])])}]), "{\"Q1\":\"a\",\"Q2\":\"b\"}"), "answers"), "Q2", "") == "b" : String}
+
+law perm_answers_text_first:
+  {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}])])}]), "tea"), "answers"), "Q1", "") == "tea" : String}
 
 law answer_clears_pending:
   {H.Hub.pending(H.Hub.thread(M.State.replay(H.Pend.fix(H.Rec.demo(M.Completed{}), [M.AskClosed{"a1", "allow", 4n}]), H.Rec.demo(M.Completed{})), "t1")) == 0n : Nat}
@@ -2927,7 +2936,7 @@ law bot_newproj_asks:
 
 # a yes to one call is not a yes to the next: only "allow for the session" is
 law bot_newproj_once:
-  {BHS.Bots.newproj.asks([M.Ask{"q1", "t1", "approval", "project_create", "", "", False{}, "accept"}], "t1") == True{} : Bool}
+  {BHS.Bots.newproj.asks([M.Ask{"q1", "t1", "approval", "project_create", "", "", "", False{}, "accept"}], "t1") == True{} : Bool}
 
 # declining, or no answer, makes nothing
 law bot_newproj_decline:

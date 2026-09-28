@@ -786,6 +786,13 @@ struct ThreadScreen: View {
     @State private var shown: Shown?
     // the entry that was first when earlier ones were asked for
     @State private var keepAt: String?
+    // the agent's questions wait while the person types a message instead
+    @State private var typingInstead = false
+
+    // the agent's questions take the composer's place (QuestionDock)
+    private var docked: Ask? {
+        (thread.asks ?? []).first { $0.kind == "input" && !($0.questions ?? []).isEmpty }
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -860,7 +867,7 @@ struct ThreadScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
-            ForEach(thread.asks ?? []) { a in
+            ForEach((thread.asks ?? []).filter { $0.id != docked?.id }) { a in
                 AskCard(model: model, ask: a).padding(.horizontal).padding(.top, 8)
             }
             if let td = thread.todos {
@@ -888,80 +895,95 @@ struct ThreadScreen: View {
                 .padding(.horizontal).padding(.top, 8)
             }
             ComposerExtras(model: model, thread: thread)
-            // one card: the text, then attach, the model and send along its foot
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...8)
-                    .focused($focused)
-                    .sendKeys(send: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send() } },
-                              alt: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") } })
-                HStack(spacing: 10) {
-                    AttachButton(model: model)
-                    Menu {
-                        Section("Model") {
-                            ForEach(thread.picker.models, id: \.value) { c in
-                                Button { model.act("model", c.value) } label: {
-                                    if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                }
-                            }
-                        }
-                        if !thread.picker.efforts.isEmpty {
-                            Section("Effort") {
-                                ForEach(thread.picker.efforts, id: \.value) { c in
-                                    Button { model.act("effort", c.value) } label: {
-                                        if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                    }
-                                }
-                            }
-                        }
-                        if let ps = thread.picker.providers, !ps.isEmpty {
-                            Section("Provider") {
-                                ForEach(ps, id: \.value) { c in
-                                    Button { model.act("effort", c.value) } label: {
-                                        if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(thread.picker.label).lineLimit(1)
-                            Image(systemName: "chevron.down")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.12), in: .capsule)
+            if let q = docked, !typingInstead {
+                QuestionDock(model: model, ask: q) { typingInstead = true }
+            } else {
+                if docked != nil {
+                    Button { typingInstead = false } label: {
+                        Label("The agent's questions are waiting", systemImage: "questionmark.bubble.fill")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color.accentColor.opacity(0.15), in: .capsule)
                     }
-                    .plainMenu()
-                    .accessibilityLabel("Model and effort: " + thread.picker.label)
-                    Spacer(minLength: 0)
-                    // a long press sends with the other follow-up mode (queue or steer);
-                    // while a turn runs with nothing typed the button stops it
-                    let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    let stop = thread.sendAct == "interrupt" && blank
-                    Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 26))
-                        .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
-                        .onTapGesture {
-                            if stop { model.act("interrupt") } else if !blank { model.send() }
-                        }
-                        .onLongPressGesture {
-                            if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
-                        }
-                        .accessibilityLabel(thread.send)
-                        .accessibilityAddTraits(.isButton)
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
                 }
+                // one card: the text, then attach, the model and send along its foot
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...8)
+                        .focused($focused)
+                        .sendKeys(send: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send() } },
+                                  alt: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") } })
+                    HStack(spacing: 10) {
+                        AttachButton(model: model)
+                        Menu {
+                            Section("Model") {
+                                ForEach(thread.picker.models, id: \.value) { c in
+                                    Button { model.act("model", c.value) } label: {
+                                        if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                    }
+                                }
+                            }
+                            if !thread.picker.efforts.isEmpty {
+                                Section("Effort") {
+                                    ForEach(thread.picker.efforts, id: \.value) { c in
+                                        Button { model.act("effort", c.value) } label: {
+                                            if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                        }
+                                    }
+                                }
+                            }
+                            if let ps = thread.picker.providers, !ps.isEmpty {
+                                Section("Provider") {
+                                    ForEach(ps, id: \.value) { c in
+                                        Button { model.act("effort", c.value) } label: {
+                                            if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(thread.picker.label).lineLimit(1)
+                                Image(systemName: "chevron.down")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.secondary.opacity(0.12), in: .capsule)
+                        }
+                        .plainMenu()
+                        .accessibilityLabel("Model and effort: " + thread.picker.label)
+                        Spacer(minLength: 0)
+                        // a long press sends with the other follow-up mode (queue or steer);
+                        // while a turn runs with nothing typed the button stops it
+                        let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let stop = thread.sendAct == "interrupt" && blank
+                        Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 26))
+                            .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
+                            .onTapGesture {
+                                if stop { model.act("interrupt") } else if !blank { model.send() }
+                            }
+                            .onLongPressGesture {
+                                if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
+                            }
+                            .accessibilityLabel(thread.send)
+                            .accessibilityAddTraits(.isButton)
+                    }
+                }
+                .padding(12)
+                // a click anywhere on the card (not only on the text's line) types
+                .background { Color.secondaryBackground.clipShape(.rect(cornerRadius: 14)).onTapGesture { focused = true } }
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
+                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
             }
-            .padding(12)
-            // a click anywhere on the card (not only on the text's line) types
-            .background { Color.secondaryBackground.clipShape(.rect(cornerRadius: 14)).onTapGesture { focused = true } }
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
-            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
           }
           .disabled(!live)
           .background(.bar)
         }
+        .onChange(of: docked?.id) { typingInstead = false }
         .navigationTitle(thread.title)
         .windowSubtitle(thread.branch)
         .inlineTitle()

@@ -422,7 +422,7 @@ def View.ask.btns(+k: String, +id: String, +o: String, +draft: String) -> List<&
 
 def View.ask(a: M.Ask, +draft: String) -> D.Node:
   match a:
-    case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
+    case M.Ask{+id, _, +k, +tool, +d, +o, _, _, _}:
       D.El{"div", id, [D.At{"class", "ask " ++ k}], [
         D.Dom.span("ask-head", Bool.pick(String, String.eq(k, "plan"), "Proposed plan", Bool.pick(String, String.eq(k, "input"), "The agent asks", "Allow " ++ tool ++ "?"))),
         Bool.pick(D.Node, String.eq(k, "plan"), D.El{"div", "", [D.At{"class", "body"}], D.Md.render(d)}, D.El{"div", "", [D.At{"class", "ask-detail"}], [D.Txt{d}]}),

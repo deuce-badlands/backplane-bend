@@ -1803,7 +1803,7 @@ def Ask.plan_lines(+ty: Ty, +text: String, +px: U32) -> List<&2, String>:
 
 def Ask.h(+ty: Ty, a: M.Ask, +px: U32) -> U32:
   match a:
-    case M.Ask{_, _, +k, _, +d, _, _, _}:
+    case M.Ask{_, _, +k, _, +d, _, _, _, _}:
       Bool.pick(U32, String.eq(k, "plan"), (U32.from_nat(List.length(&2, String, Ask.plan_lines(ty, d, px))) * 21 + 76 : U32), 76)
 
 def Asks.h(+ty: Ty, as: List<&2, M.Ask>, +px: U32) -> U32:
@@ -1845,8 +1845,8 @@ def Ask.choices(+k: String, +id: String, +o: String, +draft: String) -> List<&2,
 
 def Ask.card(+ty: Ty, a: M.Ask, +draft: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   match a:
-    case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
-      +h = Ask.h(ty, M.Ask{id, "", k, tool, d, o, True{}, ""}, (x1 - x0 - 32 : U32))
+    case M.Ask{+id, _, +k, +tool, +d, +o, _, _, _}:
+      +h = Ask.h(ty, M.Ask{id, "", k, tool, d, o, "", True{}, ""}, (x1 - x0 - 32 : U32))
       +head = Bool.pick(String, String.eq(k, "plan"), "Proposed plan", Bool.pick(String, String.eq(k, "input"), "The agent asks", "Allow " ++ tool ++ "?"))
       Out.all([
         Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), h, 0, T.Th.panel(), T.Th.warn())),
