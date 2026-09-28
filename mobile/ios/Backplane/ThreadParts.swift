@@ -630,42 +630,145 @@ struct FindSheet: View {
 }
 
 // the hub's settings, as the desktop has them
+// The hub's settings, grouped under the native window's headings. A sheet
+// on a phone; on a Mac the app's own Settings window (⌘,) shows the same
+// form without the Done button (the window closes itself).
 struct SettingsSheet: View {
     let model: AppModel
     let settings: Settings
     let version: String
+    var window = false
+
+    // consecutive rows under one heading, in the hub's order
+    private var groups: [(title: String, rows: [SetRow])] {
+        var out: [(title: String, rows: [SetRow])] = []
+        for r in settings.rows {
+            let t = r.section ?? ""
+            if let last = out.last, last.title == t { out[out.count - 1].rows.append(r) } else { out.append((t, [r])) }
+        }
+        return out
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                ForEach(settings.rows, id: \.self) { r in
+                ForEach(groups, id: \.title) { g in
                     Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(r.label)
-                            if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }
-                            if !r.buttons.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(r.buttons, id: \.self) { b in
-                                            if b.on {
-                                                Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.borderedProminent)
-                                            } else {
-                                                Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.bordered)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
+                        ForEach(g.rows, id: \.label) { SettingRowView(model: model, row: $0) }
+                    } header: {
+                        if !g.title.isEmpty { Text(g.title) }
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Settings")
             .inlineTitle()
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
+                if !window {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
+                }
             }
         }
+    }
+}
+
+// one setting: its label and note, a field when it takes text, and its
+// buttons (the current choice filled)
+private struct SettingRowView: View {
+    let model: AppModel
+    let row: SetRow
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(row.label)
+            if !row.note.isEmpty {
+                Text(row.note).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let f = row.field { field(f) }
+            if !row.buttons.isEmpty {
+                ChipFlow(spacing: 6) {
+                    ForEach(row.buttons, id: \.self) { b in
+                        if b.on {
+                            Button(b.label) { press(b) }.buttonStyle(.borderedProminent)
+                        } else {
+                            Button(b.label) { press(b) }.buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear { text = row.field?.text ?? "" }
+        // the hub clears a field once it has taken it (a saved key, an added term)
+        .onChange(of: row.field?.text) { _, t in text = t ?? "" }
+    }
+
+    @ViewBuilder private func field(_ f: SetField) -> some View {
+        Group {
+            if f.secret {
+                SecureField("", text: $text, prompt: Text(f.hint))
+            } else {
+                TextField("", text: $text, prompt: Text(f.hint))
+            }
+        }
+        // the hint is the prompt inside the field, not a label beside it
+        .labelsHidden()
+        .plainTextInput()
+        .autocorrectionDisabled()
+        .macFieldStyle()
+        .onChange(of: text) { _, t in model.field(f.name, t) }
+        // return does the row's first button (Save, Add)
+        .onSubmit { if let b = row.buttons.first(where: { $0.action != "voice-unterm" && $0.action != "voice-unkey" }) { press(b) } }
+    }
+
+    // a row with a field sends what was typed first, so the action reads it
+    private func press(_ b: SetButton) {
+        if let f = row.field { model.submit(f.name, text, b.action, b.value) } else { model.act(b.action, b.value) }
+    }
+}
+
+// buttons laid out in rows, wrapping at the width they have (a Mac's list
+// of microphones, a long dictionary)
+private struct ChipFlow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(proposal.width ?? .infinity, subviews)
+        let w = rows.map { $0.width }.max() ?? 0
+        let h = rows.map { $0.height }.reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: w, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for r in arrange(bounds.width, subviews) {
+            var x = bounds.minX
+            for i in r.items {
+                let sz = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(sz))
+                x += sz.width + spacing
+            }
+            y += r.height + spacing
+        }
+    }
+
+    private struct Row { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for i in subviews.indices {
+            let sz = subviews[i].sizeThatFits(.unspecified)
+            let add = rows[rows.count - 1].items.isEmpty ? sz.width : rows[rows.count - 1].width + spacing + sz.width
+            if add > width, !rows[rows.count - 1].items.isEmpty {
+                rows.append(Row(items: [i], width: sz.width, height: sz.height))
+            } else {
+                rows[rows.count - 1].items.append(i)
+                rows[rows.count - 1].width = add
+                rows[rows.count - 1].height = max(rows[rows.count - 1].height, sz.height)
+            }
+        }
+        return rows
     }
 }

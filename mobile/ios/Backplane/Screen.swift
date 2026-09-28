@@ -309,8 +309,18 @@ struct SetButton: Decodable, Hashable {
     let on: Bool
 }
 
+// a text field a row types into (sent as "bfield" name, as a bot form's);
+// the row's buttons then act on what was typed
+struct SetField: Decodable, Hashable {
+    let name, text, hint: String
+    let secret: Bool
+}
+
 struct SetRow: Decodable, Hashable {
+    // the heading it is grouped under, as the native window's
+    let section: String?
     let label, note: String
+    let field: SetField?
     let buttons: [SetButton]
 }
 

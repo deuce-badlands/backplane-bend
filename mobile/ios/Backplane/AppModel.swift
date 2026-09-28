@@ -295,6 +295,14 @@ final class AppModel {
         run { await $0.quiet("bfield", name + "\u{1f}" + text) }
     }
 
+    // a field's text, then the action that reads it, in that order
+    func submit(_ name: String, _ text: String, _ action: String, _ value: String = "") {
+        run { e in
+            _ = await e.quiet("bfield", name + "\u{1f}" + text)
+            return await e.act(action, value)
+        }
+    }
+
     // an address on the hub in focus (a bot's browser frame, a webhook)
     func hubURL(_ path: String, query: [URLQueryItem] = [], token: Bool = true) -> URL? {
         guard let s = screen, let l = links.first(where: { Pairing.key($0) == s.hub }) else { return nil }

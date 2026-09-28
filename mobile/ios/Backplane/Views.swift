@@ -34,7 +34,8 @@ struct RootView: View {
                 Text(d.body)
             }
             .onChange(of: s.removing?.id) { removed = "" }
-            .sheet(isPresented: Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })) {
+            // (a Mac shows Settings in its own window: MacSettings)
+            .sheet(isPresented: Binding(get: { !Platform.settingsWindow && model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })) {
                 if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "").macSheet(width: 620, height: 640) }
             }
             .sheet(isPresented: Binding(get: { model.screen?.find != nil }, set: { if !$0, model.screen?.find != nil { model.act("find-close") } })) {
@@ -432,6 +433,9 @@ struct ProjectsView: View {
     @State private var choosing: Swipe?
 
     @Environment(\.splitLayout) private var split
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
     // projects the sidebar has folded shut
     @State private var folded: Set<String> = []
 
@@ -533,7 +537,13 @@ struct ProjectsView: View {
                     Button("Search threads", systemImage: "magnifyingglass") { model.act("find-open", "search") }
                     Divider()
                     Button("Hubs", systemImage: "link") { pairing = true }
-                    Button("Settings", systemImage: "gear") { model.act("flag", "settings") }
+                    Button("Settings", systemImage: "gear") {
+                        #if os(macOS)
+                        openSettings()
+                        #else
+                        model.act("flag", "settings")
+                        #endif
+                    }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuIndicator(.hidden)
                 .accessibilityLabel("More")

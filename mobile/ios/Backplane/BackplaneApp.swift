@@ -64,5 +64,36 @@ struct BackplaneApp: App {
             }
             #endif
         }
+        #if os(macOS)
+        SwiftUI.Settings {
+            MacSettings(model: model)
+                .preferredColorScheme(model.screen?.theme == "light" ? .light : model.screen?.theme == "dark" ? .dark : nil)
+        }
+        #endif
     }
 }
+
+#if os(macOS)
+// The app's Settings window (⌘, or the sidebar's More menu): the hub in
+// focus's settings, open ("flag settings") while the window is
+private struct MacSettings: View {
+    let model: AppModel
+
+    var body: some View {
+        Group {
+            if let st = model.screen?.settings {
+                SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "", window: true)
+            } else if model.screen == nil {
+                ContentUnavailableView("No hub", systemImage: "link", description: Text("Pair with a hub to change its settings."))
+            } else {
+                ProgressView()
+            }
+        }
+        .frame(minWidth: 560, idealWidth: 620, minHeight: 480, idealHeight: 680)
+        .onAppear { if model.screen != nil, model.screen?.settings == nil { model.act("flag", "settings") } }
+        // a window opened before the hub answered opens them once it has
+        .onChange(of: model.screen == nil) { _, none in if !none, model.screen?.settings == nil { model.act("flag", "settings") } }
+        .onDisappear { if model.screen?.settings != nil { model.act("flag", "settings") } }
+    }
+}
+#endif
