@@ -126,6 +126,10 @@ struct SceneContentTests {
         #expect(f.none.isEmpty, "the hub could not plot it: \(f.none)")
         #expect(f.chunks.count > 10)
         #expect(f.box.count == 4)
+        // every layer the sample draws: the board's eight copper layers with
+        // its mask, silk and edges; the schematic's one sheet
+        let layers = Set(f.chunks.map(\.layer)).count
+        #expect(layers >= (kind == "schematic" ? 1 : 8), "\(kind) drew \(layers) layers")
         if kind == "3d" {
             let mesh = try #require(m.plots.mesh, "no model arrived")
             #expect(mesh.key == v.key)
@@ -134,5 +138,18 @@ struct SceneContentTests {
         } else {
             #expect(m.plots.mesh == nil)
         }
+    }
+
+    // what each capture came from: the hub's commit (never one with changes
+    // under src/) and the design's pinned commit
+    @Test("each viewer capture names where it came from", arguments: ["board", "schematic", "3d"])
+    func provenance(_ kind: String) throws {
+        let url = try #require(Bundle(for: Token.self).url(forResource: kind, withExtension: "capture"))
+        let o = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let hub = o["hub"] as? String ?? ""
+        #expect(hub.range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil, "hub commit: \(hub)")
+        #expect(o["kicad"] as? String == "7f2d789cd59318048e3419f0628777197a287464")
+        #expect(o["kind"] as? String == kind)
+        #expect(try Fixture.captured(kind).contains(where: Bridge.isPlot))
     }
 }
