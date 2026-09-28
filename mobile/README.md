@@ -140,16 +140,17 @@ The iPhone, iPad and Mac app has three layers of tests:
   - Every answer must decode with a throwing decoder. A field renamed on either side fails with its path (`Out.decode` would drop the screen silently).
   - Also covered: what each scene shows, through `AppModel` itself; what the app asks the hub for; the question dock's answers; the Settings layout; pairing links; and the board viewer's decoding.
   - `scripts/test.sh` fails when a Bend change would alter the fixtures and they were not written again.
-- **Snapshots** (swift-snapshot-testing): every scene on iPhone, iPad and Mac, in `BackplaneTests/__Snapshots__/SnapshotTests`. They double as pictures of the app on every device.
-- **The board viewer** is snapshotted on a sample board: KiCad's RoyalBlue54L Feather demo (CERN-OHL-P v2; `BackplaneTests/Fixtures/Viewer/NOTICE.md`).
+- **Snapshots** (swift-snapshot-testing, a test-only dependency): every scene on iPhone, iPad and Mac, in `BackplaneTests/__Snapshots__/SnapshotTests`. They double as pictures of the app on every device. The references are recorded locally and not checked in (`mobile/ios/.gitignore`), so CI runs every suite but this one (`BACKPLANE_TEST_SNAPSHOTS=0`).
+- **The board viewer** is snapshotted on a sample board: KiCad's RoyalBlue54L Feather demo. Its captures are under the design's licences (CERN-OHL-P v2, and KiCad's CC BY-SA 4.0 for its demos and 3D library), not this repository's MIT; see `BackplaneTests/Fixtures/Viewer/NOTICE.md`.
   - The layout, schematic and 3D frames are captured from a real hub by `scripts/apple-viewer-fixtures.sh`. It fetches the demo at a pinned KiCad commit and runs a hub of its own (own port and home).
   - The tests feed the captures to the app as the socket would.
   - A Metal layer draws only on a screen, so under tests the canvas also shows its frame as a still image (`PlotRenderer.image(of:)`), which the snapshots take.
 
 ```sh
-scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulator (iPhone 17 Pro)
+scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulator (iPhone 17 Pro); both run, either failing fails
 scripts/test-apple.sh mac                  # or one of them
 SNAPSHOT_RECORD=all scripts/test-apple.sh  # record every snapshot again, then look at them
+BACKPLANE_TEST_SNAPSHOTS=0 scripts/test-apple.sh mac   # all but the snapshots, as CI does
 ```
 
 Or run the Backplane scheme's tests (⌘U) in Xcode.

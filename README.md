@@ -61,4 +61,4 @@ scripts/smoke.sh   # start the built server and poke it
 
 ## License
 
-MIT. See [LICENSE](LICENSE). `backplane-step2glb` embeds OpenCascade (LGPL-2.1); its notices ship in `licenses/`.
+MIT. See [LICENSE](LICENSE). `backplane-step2glb` embeds OpenCascade (LGPL-2.1); its notices ship in `licenses/`. The Apple app's board viewer test captures (`mobile/ios/BackplaneTests/Fixtures/Viewer`) are from KiCad's RoyalBlue54L Feather demo and keep its licences (CERN-OHL-P v2; CC BY-SA 4.0); see the `NOTICE.md` there.
