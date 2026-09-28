@@ -630,14 +630,12 @@ struct FindSheet: View {
 }
 
 // the hub's settings, as the desktop has them
-// The hub's settings, grouped under the native window's headings. A sheet
-// on a phone; on a Mac the app's own Settings window (⌘,) shows the same
-// form without the Done button (the window closes itself).
+// The hub's settings, grouped under the native window's headings: a sheet
+// (on a Mac also from the app menu's Settings…, cmd+comma)
 struct SettingsSheet: View {
     let model: AppModel
     let settings: Settings
     let version: String
-    var window = false
 
     // consecutive rows under one heading, in the hub's order
     private var groups: [(title: String, rows: [SetRow])] {
@@ -664,9 +662,7 @@ struct SettingsSheet: View {
             .navigationTitle("Settings")
             .inlineTitle()
             .toolbar {
-                if !window {
-                    ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
-                }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
             }
         }
     }

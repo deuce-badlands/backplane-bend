@@ -346,15 +346,6 @@ enum Platform {
         #endif
     }
 
-    // a Mac has a Settings window (⌘,); a phone a sheet
-    static var settingsWindow: Bool {
-        #if os(macOS)
-        true
-        #else
-        false
-        #endif
-    }
-
     #if os(macOS)
     static let terminalSheet = CGSize(width: 820, height: 560)
     #endif
