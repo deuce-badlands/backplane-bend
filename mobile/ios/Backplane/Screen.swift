@@ -384,6 +384,10 @@ struct FolderRow: Decodable, Hashable {
 struct SetButton: Decodable, Hashable {
     let label, action, value: String
     let on: Bool
+    // it acts on the row's field and waits for text in it; it undoes
+    // something (asked first, in confirm's words); a switch's "on"
+    let needs, danger, yes: Bool?
+    let confirm: String?
 }
 
 // a text field a row types into (sent as "bfield" name, as a bot form's);
@@ -415,6 +419,8 @@ struct SetRow: Decodable, Hashable {
 struct SetSection: Decodable, Hashable {
     let title, summary: String
     let attention: Bool
+    // the icon's name (threads, agents, writing, cad, appearance, network, voice)
+    var icon: String? = nil
 }
 
 struct Settings: Decodable {

@@ -178,6 +178,12 @@ def Mock.log.sample() -> J.Json:
 
 # the hub's answer to Settings' voice status request: a saved key (masked),
 # the dictionary, and the machine's microphones
+# the same answer from a hub without its voice helper: no microphone
+def Mock.voice.bare() -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("reply")}, J.KV{"id", J.Json.str("")}, J.KV{"ok", J.Json.bool(True{})},
+    J.KV{"voiceKey", J.Json.str("")}, J.KV{"voiceDict", J.Json.str("")},
+    J.KV{"voiceDevices", J.Json.str("{\"event\":\"devices\",\"default\":\"\",\"devices\":[]}")}])
+
 def Mock.voice(key: Bool) -> J.Json:
   J.Json.obj([J.KV{"t", J.Json.str("reply")}, J.KV{"id", J.Json.str("")}, J.KV{"ok", J.Json.bool(True{})},
     J.KV{"voiceKey", J.Json.str(Bool.pick(String, key, "sk-…9f2c", ""))}, J.KV{"voiceDict", J.Json.str("TPS62840\nKiCad\nJLCPCB")},

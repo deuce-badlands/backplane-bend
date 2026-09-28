@@ -829,6 +829,23 @@ def Mob.search(+u: U.Ui) -> J.Json:
 def Mob.set.btn(+label: String, +action: String, +value: String, on: Bool) -> J.Json:
   J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"value", J.Json.str(value)}, J.KV{"on", J.Json.bool(on)}])
 
+# a button with more to say: "needs" (it acts on the row's field, and waits
+# for text in it), "danger" and "confirm" (it undoes something: asked first,
+# in these words), "yes" (a switch's button that turns it on)
+def Mob.set.btn.x(+label: String, +action: String, +value: String, on: Bool, more: List<&2, J.KV>) -> J.Json:
+  J.Json.obj(List.append(&2, J.KV, [J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"value", J.Json.str(value)}, J.KV{"on", J.Json.bool(on)}], more))
+
+def Mob.set.needs(+label: String, +action: String, on: Bool) -> J.Json:
+  Mob.set.btn.x(label, action, "", on, [J.KV{"needs", J.Json.bool(True{})}])
+
+def Mob.set.danger(+label: String, +action: String, +confirm: String) -> J.Json:
+  Mob.set.btn.x(label, action, "", False{}, [J.KV{"danger", J.Json.bool(True{})}, J.KV{"confirm", J.Json.str(confirm)}])
+
+# a setting that is on or off ("on" unless it is "off")
+def Mob.set.switch(+cur: String, +key: String) -> List<&2, J.Json>:
+  [Mob.set.btn.x("On", "setting", key ++ "=on", Bool.not(String.eq(cur, "off")), [J.KV{"yes", J.Json.bool(True{})}]),
+   Mob.set.btn("Off", "setting", key ++ "=off", String.eq(cur, "off"))]
+
 # A row: its section (the native window's heads), the control it is
 # ("choice" a segmented pick, "menu" a pop-up, "stepper" the −/+ pair,
 # "switch" on/off, "status" a value, "field" typed text; "buttons" a row of
@@ -917,14 +934,16 @@ def Mob.set.voice(+u: U.Ui, +st: M.State) -> List<&2, J.Json>:
   +key = U.Ui.scratch(u, "@voice.key")
   [Mob.set.krow("Voice", "field", "OpenAI API key", Bool.pick(String, String.is_empty(key), "For dictation (GPT-Live-Transcribe). Kept in the hub machine's secrets; never shown again.",
       "Saved: " ++ key ++ ". Paste a new one to replace it."), key, Bool.pick(String, String.is_empty(key), "warn", "ok"),
-     Mob.set.field("vkey", U.Ui.scratch(u, "@f.vkey"), "sk-…", True{}),
-     Mob.set.btn("Save", "voice-key", "", True{}) <> Bool.pick(List<&2, J.Json>, String.is_empty(key), Nil{}, [Mob.set.btn("Remove", "voice-unkey", "", False{})]), Nil{}),
+     # (a secret field: its text stays on the phone until Save sends it)
+     Mob.set.field("vkey", "", "sk-…", True{}),
+     Mob.set.needs("Save", "voice-key", True{}) <> Bool.pick(List<&2, J.Json>, String.is_empty(key), Nil{},
+       [Mob.set.danger("Remove", "voice-unkey", "Forget the saved OpenAI key? Dictation stops until a new one is saved.")]), Nil{}),
    Mob.set.row("Voice", "menu", "Microphone", "The composer's mic records the hub machine's " ++
       Bool.pick(String, String.is_empty(dev), "default microphone" ++ Mob.set.mic(U.Voice.label(u, U.Voice.default(u))), U.Voice.label(u, dev)) ++ ".",
      Mob.set.btn("Default", "setting", "voice.device=", String.is_empty(dev)) <> Mob.set.devs(U.Voice.devices(u), dev)),
    Mob.set.krow("Voice", "field", "Dictionary", "Names and terms to expect. Words you clarify after dictating join it.", "", "",
      Mob.set.field("vterm", U.Ui.scratch(u, "@f.vterm"), "Add a term", False{}),
-     [Mob.set.btn("Add", "voice-term", "", False{})], Mob.set.terms(U.Voice.dict(u)))]
+     [Mob.set.needs("Add", "voice-term", False{})], Mob.set.terms(U.Voice.dict(u)))]
 
 # an agent CLI's row under Agents, grouped as "Installed": its version,
 # or not installed
@@ -934,10 +953,18 @@ def Mob.set.cli(+models: String, +prov: String, +name: String) -> J.Json:
     J.KV{"value", J.Json.str(Bool.pick(String, String.is_empty(v), "Not installed", v))}, J.KV{"tone", J.Json.str(Bool.pick(String, String.is_empty(v), "", "ok"))},
     J.KV{"field", J.Null{}}, J.KV{"buttons", J.Json.arr(Nil{})}, J.KV{"chips", J.Json.arr(Nil{})}])
 
-# the sections in order: title, what is set there in a few words, and
-# whether it needs you (no voice key, no kicad-cli, an update waiting)
-def Mob.set.sec(+title: String, +summary: String, attention: Bool) -> J.Json:
-  J.Json.obj([J.KV{"title", J.Json.str(title)}, J.KV{"summary", J.Json.str(summary)}, J.KV{"attention", J.Json.bool(attention)}])
+# the sections in order: title, its icon (a name the apps draw: threads,
+# agents, writing, cad, appearance, network, voice), what is set there in
+# a few words, and whether it needs you (no voice key, no kicad-cli, an
+# update waiting)
+def Mob.set.sec(+title: String, +icon: String, +summary: String, attention: Bool) -> J.Json:
+  J.Json.obj([J.KV{"title", J.Json.str(title)}, J.KV{"icon", J.Json.str(icon)}, J.KV{"summary", J.Json.str(summary)}, J.KV{"attention", J.Json.bool(attention)}])
+
+# Voice needs a key only once the hub has said it has none and that it can
+# record here (a hub without its voice helper lists no microphone)
+def Mob.set.voice.wants(+u: U.Ui) -> Bool:
+  Bool.and(String.eq(U.Ui.scratch(u, "@voice.set"), "1"),
+    Bool.and(String.is_empty(U.Ui.scratch(u, "@voice.key")), Bool.not(List.is_empty(&2, U.VDev, U.Voice.devices(u)))))
 
 def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
@@ -953,19 +980,19 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
   +tail = U.Str.get(nf, "tailnet")
   J.Json.obj([
     J.KV{"sections", J.Json.arr([
-      Mob.set.sec("Threads", "Settle " ++ Mob.set.days.label(days) ++ " · " ++ Mob.set.name(follow, "Default"), False{}),
-      Mob.set.sec("Agents", Mob.set.name(prov, "") ++ " · " ++ Mob.set.model(models, prov, model), String.is_empty(U.Models.cli(models, prov))),
-      Mob.set.sec("Writing", Mob.set.name(tprov, "") ++ " · " ++ Mob.set.model(models, tprov, tmodel), False{}),
-      Mob.set.sec("CAD", "KiCad " ++ Bool.pick(String, U.KiCad.found(nf), "found", "not found") ++ " · FreeCAD " ++ Bool.pick(String, U.FreeCAD.found(nf), "found", "not found"), Bool.not(U.KiCad.found(nf))),
-      Mob.set.sec("Appearance", Mob.set.name(theme, "System") ++ " · " ++ Mob.set.name(U.Side.view(st), ""), False{}),
-      Mob.set.sec("Network", Mob.set.name(chan, "") ++ Bool.pick(String, waiting, " · update", ""), waiting),
-      Mob.set.sec("Voice", Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@voice.key")), "No key", "Key saved"), String.is_empty(U.Ui.scratch(u, "@voice.key")))])},
+      Mob.set.sec("Threads", "threads", "Settle " ++ Mob.set.days.label(days) ++ " · " ++ Mob.set.name(follow, "Default"), False{}),
+      Mob.set.sec("Agents", "agents", Mob.set.name(prov, "") ++ " · " ++ Mob.set.model(models, prov, model), Bool.and(Bool.not(String.is_empty(models)), String.is_empty(U.Models.cli(models, prov)))),
+      Mob.set.sec("Writing", "writing", Mob.set.name(tprov, "") ++ " · " ++ Mob.set.model(models, tprov, tmodel), False{}),
+      Mob.set.sec("CAD", "cad", "KiCad " ++ Bool.pick(String, U.KiCad.found(nf), "found", "not found") ++ " · FreeCAD " ++ Bool.pick(String, U.FreeCAD.found(nf), "found", "not found"), Bool.not(U.KiCad.found(nf))),
+      Mob.set.sec("Appearance", "appearance", Mob.set.name(theme, "System") ++ " · " ++ Mob.set.name(U.Side.view(st), ""), False{}),
+      Mob.set.sec("Network", "network", Mob.set.name(chan, "") ++ Bool.pick(String, waiting, " · update", ""), waiting),
+      Mob.set.sec("Voice", "voice", Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@voice.key")), "No key", "Key saved"), Mob.set.voice.wants(u))])},
     J.KV{"rows", J.Json.arr(List.append(&2, J.Json, [
     Mob.set.krow("Threads", "stepper", "Settle after", "Threads idle this long move to Settled. They stay saved.", Mob.set.days.label(days), "", J.Null{}, Mob.set.days(days), Nil{}),
     Mob.set.row("Threads", "choice", "Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. The send button's long press (⌥⌘Return on a Mac) does the other. Default: Claude steers, Codex and Grok queue.",
       Mob.set.picks(["", "queue", "steer"], follow, "followup", "Default")),
     Mob.set.krow("Threads", "switch", "Continue after a restart", "Turns a restart cuts short go on by themselves.", "", "", J.Null{},
-      Mob.set.picks(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue", ""), Nil{}),
+      Mob.set.switch(Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"), Nil{}),
     Mob.set.row("Agents", "choice", "Provider for new threads", "Each thread keeps its own; change it from the composer.", Mob.set.picks(["claude", "codex", "grok"], prov, "agent.provider", "")),
     Mob.set.row("Agents", "menu", "Model for new threads", U.Models.label_of(models, prov, model), Mob.set.models(U.Models.menu(models, prov), models, prov, model, "agent.model")),
     Mob.set.cli(models, "claude", "Claude Code"),
@@ -975,9 +1002,10 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row("Writing", "menu", "Model", U.Models.label_of(models, tprov, tmodel), Mob.set.models(U.Models.menu(models, tprov), models, tprov, tmodel, "text.model")),
     Mob.set.status("CAD", "KiCad CLI", U.KiCad.cli.note(nf), Bool.pick(String, U.KiCad.found(nf), "Found", "Not found"), Bool.pick(String, U.KiCad.found(nf), "ok", "warn"), Nil{}),
     Bool.pick(J.Json, U.KiCad.ipc.ready(nf),
-      Mob.set.krow("CAD", "switch", "KiCad IPC", U.KiCad.ipc.note(nf), "", "", J.Null{}, Mob.set.picks(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc", ""), Nil{}),
+      Mob.set.krow("CAD", "switch", "KiCad IPC", U.KiCad.ipc.note(nf), "", "", J.Null{}, Mob.set.switch(M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{}),
       # (its note and button say what it needs: a value beside them left the label no room)
-      Mob.set.status("CAD", "KiCad IPC", U.KiCad.ipc.note(nf), "", "", [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})])),
+      Mob.set.status("CAD", "KiCad IPC", "Agents drive KiCad through Backplane KiCad's api-server. The button installs it on the hub's machine (Linux x86-64); or get it from github.com/i2cjak/Backplane_KiCad.", "", "",
+        [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})])),
     Mob.set.status("CAD", "FreeCAD", U.FreeCAD.note(nf), Bool.pick(String, U.FreeCAD.found(nf), "Found", "Not found"), Bool.pick(String, U.FreeCAD.found(nf), "ok", ""), Nil{}),
     Mob.set.row("Appearance", "choice", "Theme", "The hub's windows and web page. System follows this device.", Mob.set.picks(["", "dark", "light"], theme, "ui.theme", "System")),
     Mob.set.row("Appearance", "choice", "Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.picks(["projects", "active"], U.Side.view(st), "sidebar.view", "")),

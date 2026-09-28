@@ -53,4 +53,17 @@ struct BridgeRequestTests {
         let frames = try sent(b.call("act", ["voice-key", ""]), to: f.hub)
         #expect(frames.contains { $0.contains("sk-proj-new") })
     }
+
+    @Test("a phone's key goes as Save's value, and is never on the screen")
+    func voiceKeyValue() throws {
+        let (b, f) = try scene("settings")
+        let text = b.call("act", ["voice-key", "sk-proj-typed"])
+        let frames = try sent(text, to: f.hub)
+        #expect(frames.contains { $0.contains("sk-proj-typed") })
+        let out = try JSONDecoder().decode(Out.self, from: Data(text.utf8))
+        let key = try #require(out.screen?.settings?.rows.first { $0.label == "OpenAI API key" })
+        #expect(key.field?.text == "")
+        #expect(key.buttons.first?.needs == true)
+        #expect(!text.contains("sk-proj-typed"))
+    }
 }

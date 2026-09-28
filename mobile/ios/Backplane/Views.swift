@@ -736,6 +736,8 @@ private struct FoldersSheet: View {
     @State private var text = ""
     // what was typed here: a screen still echoing it never overwrites the field
     @State private var typed: Set<String> = []
+    // the path is being typed: return goes into it, not Add
+    @FocusState private var typing: Bool
 
     private var browsing: Bool { folders.text.hasPrefix("~") || folders.text.hasPrefix("/") }
     private var up: FolderRow? { folders.items.first { $0.kind == "up" } }
@@ -769,6 +771,7 @@ private struct FoldersSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .plainTextInput()
                         .autocorrectionDisabled()
+                        .focused($typing)
                         .onSubmit {
                             if (text.hasPrefix("~") || text.hasPrefix("/")) && !text.hasSuffix("/") { text += "/" }
                         }
@@ -830,7 +833,7 @@ private struct FoldersSheet: View {
                             if let a = add, a.kind != "off" { model.act(a.action, a.value) }
                         }
                         .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
+                        .keyboardShortcut(typing ? nil : .defaultAction)
                         .disabled(add == nil || add?.kind == "off")
                     }
                     .padding(12)

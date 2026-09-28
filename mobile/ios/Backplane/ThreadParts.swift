@@ -641,6 +641,8 @@ struct SettingsSheet: View {
     // sections beside the chosen one (a Mac, an iPad), or a list that pushes
     let wide: Bool
     @AppStorage("settings.section") private var picked = ""
+    // a row's field is being typed in: return is its own, not Done's
+    @State private var typing = false
 
     private var sections: [SetSection] { Self.sections(of: settings) }
 
@@ -662,6 +664,7 @@ struct SettingsSheet: View {
         // the rows lay their controls out by the same width
         Group { if wide { split } else { stack } }
             .environment(\.splitLayout, wide)
+            .environment(\.settingsTyping, $typing)
     }
 
     private var split: some View {
@@ -670,15 +673,22 @@ struct SettingsSheet: View {
                 List(selection: Binding(get: { current?.title }, set: { if let t = $0 { picked = t } })) {
                     ForEach(sections, id: \.title) { s in
                         HStack(spacing: 8) {
-                            SectionIcon(title: s.title)
+                            SectionIcon(icon: s.icon ?? "")
                             Text(s.title)
                             Spacer(minLength: 4)
-                            if s.attention { Circle().fill(.orange).frame(width: 7, height: 7).accessibilityLabel("Needs attention") }
+                            // a mark by shape, not colour alone
+                            if s.attention {
+                                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).font(.caption)
+                                    .accessibilityLabel("Needs attention")
+                            }
                         }
                         .tag(s.title)
                     }
                 }
                 .listStyle(.sidebar)
+                .safeAreaInset(edge: .bottom) {
+                    if !version.isEmpty { Text("Backplane \(version)").font(.caption).foregroundStyle(.secondary).padding(10) }
+                }
                 .frame(width: Platform.settingsSidebar)
                 Divider()
                 if let c = current {
@@ -693,23 +703,18 @@ struct SettingsSheet: View {
                 #endif
                 Spacer()
                 Button("Done") { model.act("flag", "settings") }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(typing ? nil : .defaultAction)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .background { keys }
+        // cmd+1…9 picks a section
+        .onKeyPress(phases: .down) { k in
+            guard k.modifiers.contains(.command), let n = k.characters.first?.wholeNumberValue, n >= 1, n <= min(9, sections.count) else { return .ignored }
+            picked = sections[n - 1].title
+            return .handled
+        }
         .macSheet(width: 700, height: 520)
         .pageSheet()
-    }
-
-    // cmd+1…9 picks a section
-    private var keys: some View {
-        ForEach(Array(sections.prefix(9).enumerated()), id: \.offset) { i, s in
-            Button("") { picked = s.title }
-                .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command)
-                .opacity(0)
-                .accessibilityHidden(true)
-        }
     }
 
     private var stack: some View {
@@ -719,9 +724,13 @@ struct SettingsSheet: View {
                     ForEach(sections, id: \.title) { s in
                         NavigationLink(value: s.title) {
                             HStack(spacing: 10) {
-                                SectionIcon(title: s.title)
+                                SectionIcon(icon: s.icon ?? "")
                                 Text(s.title)
                                 Spacer(minLength: 8)
+                                if s.attention {
+                                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).font(.caption)
+                                        .accessibilityLabel("Needs attention")
+                                }
                                 Text(s.summary).font(.subheadline).lineLimit(1)
                                     .foregroundStyle(s.attention ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                             }
@@ -748,18 +757,19 @@ struct SettingsSheet: View {
 }
 
 // a section's icon: a tinted rounded square, as System Settings draws them
+// (the hub names it; a name this app does not know draws a gear)
 private struct SectionIcon: View {
-    let title: String
+    let icon: String
 
     private var look: (String, Color) {
-        switch title {
-        case "Threads": ("text.bubble.fill", .gray)
-        case "Agents": ("cpu.fill", .indigo)
-        case "Writing": ("pencil.line", .orange)
-        case "KiCad": ("memorychip.fill", .teal)
-        case "Appearance": ("circle.lefthalf.filled", Color(white: 0.4))
-        case "Network": ("network", .blue)
-        case "Voice": ("mic.fill", .pink)
+        switch icon {
+        case "threads": ("text.bubble.fill", .gray)
+        case "agents": ("cpu.fill", .indigo)
+        case "writing": ("pencil.line", .orange)
+        case "cad": ("memorychip.fill", .teal)
+        case "appearance": ("circle.lefthalf.filled", Color(white: 0.4))
+        case "network": ("network", .blue)
+        case "voice": ("mic.fill", .pink)
         default: ("gearshape.fill", .gray)
         }
     }
@@ -796,7 +806,7 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 0) {
             if header {
                 HStack(spacing: 10) {
-                    SectionIcon(title: section.title)
+                    SectionIcon(icon: section.icon ?? "")
                     Text(section.title).font(.title3.weight(.semibold))
                 }
                 .padding(.horizontal, 20).padding(.top, 16)
@@ -819,17 +829,28 @@ struct SettingsPane: View {
 private struct SettingRowView: View {
     let model: AppModel
     let row: SetRow
+    // the field's text; a secret's never leaves this view but with its
+    // button (the hub never sends it back), anything else goes to the hub
+    // as it is typed, and what was typed here is never overwritten by a
+    // screen still echoing it
     @State private var text = ""
+    @State private var typed: Set<String> = []
+    // an undoing button waiting for its confirmation
+    @State private var asking: SetButton?
+    @FocusState private var editing: Bool
     @Environment(\.splitLayout) private var wide
+    @Environment(\.settingsTyping) private var typing
 
     private var kind: String { row.kind ?? "" }
 
-    // a phone puts a wide control (segments, a field) under its label
+    // a field (and its buttons) goes under its label, where it has the
+    // width; a phone puts its other wide controls (segments) there too
     private var below: Bool {
+        if kind == "field" { return true }
         #if os(macOS)
-        false
+        return false
         #else
-        !wide && (kind == "choice" || kind == "field" || (kind == "status" && !row.buttons.isEmpty) || kind == "")
+        return !wide && (kind == "choice" || (kind == "status" && !row.buttons.isEmpty) || kind == "")
         #endif
     }
 
@@ -859,8 +880,18 @@ private struct SettingRowView: View {
         }
         .padding(.vertical, 2)
         .onAppear { text = row.field?.text ?? "" }
-        // the hub clears a field once it has taken it (a saved key, an added term)
-        .onChange(of: row.field?.text) { _, t in text = t ?? "" }
+        // the hub clears a field once it has taken it (an added term)
+        .onChange(of: row.field?.text) { _, t in
+            let t = t ?? ""
+            if !typed.contains(t) { text = t }
+            typed = []
+        }
+        .onChange(of: editing) { _, e in typing.wrappedValue = e }
+        .confirmationDialog(asking?.confirm ?? "", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
+                            titleVisibility: .visible, presenting: asking) { b in
+            Button(b.label, role: .destructive) { send(b) }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var label: some View {
@@ -896,8 +927,8 @@ private struct SettingRowView: View {
                 }
             }
         case "switch":
-            Toggle(row.label, isOn: Binding(get: { row.buttons.first?.on ?? false }, set: { on in
-                if let b = row.buttons.first(where: { $0.label.lowercased() == (on ? "on" : "off") }) { press(b) }
+            Toggle(row.label, isOn: Binding(get: { row.buttons.first { $0.yes == true }?.on ?? false }, set: { on in
+                if let b = row.buttons.first(where: { ($0.yes == true) == on }) { press(b) }
             }))
             .toggleStyle(.switch)
             .labelsHidden()
@@ -928,10 +959,13 @@ private struct SettingRowView: View {
 
     @ViewBuilder private var buttons: some View {
         ForEach(row.buttons, id: \.self) { b in
-            if b.on {
-                Button(b.label) { press(b) }.buttonStyle(.borderedProminent)
+            let idle = b.needs == true && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if b.danger == true {
+                Button(b.label, role: .destructive) { press(b) }.buttonStyle(.bordered)
+            } else if b.on {
+                Button(b.label) { press(b) }.buttonStyle(.borderedProminent).disabled(idle)
             } else {
-                Button(b.label) { press(b) }.buttonStyle(.bordered)
+                Button(b.label) { press(b) }.buttonStyle(.bordered).disabled(idle)
             }
         }
     }
@@ -950,14 +984,54 @@ private struct SettingRowView: View {
         .autocorrectionDisabled()
         .macFieldStyle()
         .frame(minWidth: 160, idealWidth: 220, maxWidth: below ? .infinity : 240)
-        .onChange(of: text) { _, t in model.field(f.name, t) }
-        // return does the row's first button (Save, Add)
-        .onSubmit { if let b = row.buttons.first { press(b) } }
+        .focused($editing)
+        .onChange(of: text) { _, t in
+            guard !f.secret, t != row.field?.text else { return }
+            typed.insert(t)
+            model.field(f.name, t)
+        }
+        // return does the row's button that takes the text (Save, Add)
+        .onSubmit { if let b = row.buttons.first(where: { $0.needs == true }) { press(b) } }
     }
 
-    // a row with a field sends what was typed first, so the action reads it
     private func press(_ b: SetButton) {
-        if let f = row.field { model.submit(f.name, text, b.action, b.value) } else { model.act(b.action, b.value) }
+        if b.danger == true, b.confirm != nil { asking = b; return }
+        send(b)
+    }
+
+    // a secret goes with its button, as the action's value, and is then
+    // forgotten here; any other field's text reaches the hub before the
+    // action that reads it
+    private func send(_ b: SetButton) {
+        guard let f = row.field else { model.act(b.action, b.value); return }
+        if f.secret {
+            if b.needs == true {
+                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !t.isEmpty else { return }
+                text = ""
+                model.act(b.action, t)
+            } else {
+                model.act(b.action, b.value)
+            }
+        } else if b.needs == true {
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            model.submit(f.name, text, b.action, b.value)
+        } else {
+            model.act(b.action, b.value)
+        }
+    }
+}
+
+// whether a Settings row's field is being typed in (return is then the
+// field's, not the sheet's Done)
+private struct SettingsTypingKey: EnvironmentKey {
+    static let defaultValue: Binding<Bool> = .constant(false)
+}
+
+extension EnvironmentValues {
+    var settingsTyping: Binding<Bool> {
+        get { self[SettingsTypingKey.self] }
+        set { self[SettingsTypingKey.self] = newValue }
     }
 }
 

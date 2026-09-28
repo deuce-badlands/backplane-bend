@@ -4398,8 +4398,10 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
       Voice.toggle(Voice.on(u), u)
+    # the key: the action's value (a phone's field, which never leaves the
+    # phone but with this), else the field typed here
     case 1n:
-      Voice.rpc(Ui.scratch_set(u, "@f.vkey", ""), "key", [J.KV{"key", J.Str{Ui.scratch(u, "@f.vkey")}}])
+      Voice.rpc(Ui.scratch_set(u, "@f.vkey", ""), "key", [J.KV{"key", J.Str{Bool.pick(String, String.is_empty(value), Ui.scratch(u, "@f.vkey"), value)}}])
     case 2n:
       Voice.rpc(u, "unkey", Nil{})
     case 3n:

@@ -128,7 +128,7 @@ struct SnapshotTests {
     func settingsAttention() async throws {
         let m = try await model("settings-attention")
         let st = try #require(m.screen?.settings)
-        showing("KiCad") {
+        showing("CAD") {
             for d in Device.here {
                 assertSnapshot(SettingsSheet(model: m, settings: st, version: "0.10.0", wide: d != .iPhone), device: d, size: sheet(d))
             }
