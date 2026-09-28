@@ -80,7 +80,7 @@
             "thread": "t1",
             "msg": "m2",
             "role": "assistant",
-            "text": "The SPI bus to the IMU is routable on two layers, but two nets break the length budget.\n\n## Length check\n\n| Net | Length | Budget | Status |\n|---|---:|---:|---|\n| IMU_SCK | 41.2 mm | 45 mm | ok |\n| IMU_MOSI | 47.9 mm | 45 mm | over |\n| IMU_MISO | 46.3 mm | 45 mm | over |\n| IMU_CS | 38.0 mm | 45 mm | ok |\n\nMOSI and MISO detour around the **USB-C connector**. Moving `U4` 3 mm toward the MCU brings both under budget without new vias.\n\n```python\n# resources/check_spi_lengths.py\nBUDGET_MM = 45.0\nover = [n for n, mm in lengths.items() if mm > BUDGET_MM]\n```\n\nNext:\n\n1. Move `U4` and rerun DRC.\n2. Add series 22 Ω resistors on SCK if ringing shows on the scope.",
+            "text": "The SPI bus to the IMU is routable on two layers, but two nets break the length budget.\n\n## Length check\n\n| Net | Length | Budget | Status |\n|---|---:|---:|---|\n| IMU_SCK | 41.2 mm | 45 mm | ok |\n| IMU_MOSI | 47.9 mm | 45 mm | over |\n| IMU_MISO | 46.3 mm | 45 mm | over |\n| IMU_CS | 38.0 mm | 45 mm | ok |\n\nMOSI and MISO detour around the **USB-C connector**. Moving `U4` 3 mm toward the MCU brings both under budget without new vias.\n\n```python\n# resources/check_spi_lengths.py\nBUDGET_MM = 45.0\nover = [n for n, mm in lengths.items() if mm > BUDGET_MM]\n```\n\nNext:\n\n- Move `U4` and rerun DRC.\n- Add series 22 Ω resistors on SCK if ringing shows on the scope.",
             "at": 1790548400
           },
           {

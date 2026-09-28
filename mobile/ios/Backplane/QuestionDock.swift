@@ -13,7 +13,9 @@ struct QuestionDock: View {
     // switch to the ordinary composer (the questions wait)
     let typeInstead: () -> Void
 
-    private enum Choice: Equatable { case options(Set<Int>), own, discuss }
+    // what a question is answered with: options picked, words of one's own,
+    // or a talk first
+    enum Choice: Equatable { case options(Set<Int>), own, discuss }
 
     @State private var at = 0
     @State private var choices: [Int: Choice] = [:]
@@ -91,7 +93,7 @@ struct QuestionDock: View {
     }
 
     // an option's label without Claude's "(Recommended)" marker, and whether it had one
-    private static func split(_ label: String) -> (String, Bool) {
+    static func split(_ label: String) -> (String, Bool) {
         let marker = "(Recommended)"
         guard label.contains(marker) else { return (label, false) }
         return (label.replacingOccurrences(of: marker, with: "").trimmingCharacters(in: .whitespaces), true)
@@ -179,8 +181,11 @@ struct QuestionDock: View {
 
     // the recommended option picked to start with (nothing when none is)
     private func recommended(_ i: Int) -> Choice? {
-        guard i < questions.count, let r = (questions[i].options ?? []).firstIndex(where: { Self.split($0.label).1 }) else { return nil }
-        return .options([r])
+        i < questions.count ? Self.recommended(questions[i]) : nil
+    }
+
+    static func recommended(_ q: AskQuestion) -> Choice? {
+        (q.options ?? []).firstIndex { split($0.label).1 }.map { .options([$0]) }
     }
 
     private func pick(_ i: Int) {
@@ -194,31 +199,44 @@ struct QuestionDock: View {
     }
 
     private func answered(_ i: Int) -> Bool {
-        switch choices[i] {
+        Self.answered(choices[i], own: own[i])
+    }
+
+    static func answered(_ c: Choice?, own: String?) -> Bool {
+        switch c {
         case .options(let s)?: !s.isEmpty
-        case .own?: !(own[i] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .own?: !(own ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .discuss?: true
         case nil: false
         }
     }
 
-    private func answer(_ i: Int) -> String {
-        let opts = questions[i].options ?? []
-        switch choices[i] {
-        case .options(let s)?: return s.sorted().compactMap { $0 < opts.count ? Self.split(opts[$0].label).0 : nil }.joined(separator: ", ")
-        case .own?: return (own[i] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        case .discuss?: return Self.discussAnswer
+    // a question's answer as Claude reads it: the options' labels (without
+    // the marker, in their order), the words typed, or the ask to discuss
+    static func answer(_ q: AskQuestion, _ c: Choice?, own: String?) -> String {
+        let opts = q.options ?? []
+        switch c {
+        case .options(let s)?: return s.sorted().compactMap { $0 < opts.count ? split(opts[$0].label).0 : nil }.joined(separator: ", ")
+        case .own?: return (own ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        case .discuss?: return discussAnswer
         case nil: return ""
         }
+    }
+
+    // the "answer" action's value: the ask, then every question's answer
+    // as JSON (question text -> answer)
+    static func reply(_ ask: Ask, choices: [Int: Choice], own: [Int: String]) -> String? {
+        let qs = ask.questions ?? []
+        var m: [String: String] = [:]
+        for i in qs.indices { m[qs[i].question] = answer(qs[i], choices[i], own: own[i]) }
+        guard let d = try? JSONSerialization.data(withJSONObject: m, options: [.sortedKeys]), let json = String(data: d, encoding: .utf8) else { return nil }
+        return ask.id + "|" + json
     }
 
     private func next() {
         guard answered(at) else { return }
         if !last { at += 1; return }
-        var m: [String: String] = [:]
-        for i in questions.indices { m[questions[i].question] = answer(i) }
-        guard let d = try? JSONSerialization.data(withJSONObject: m, options: [.sortedKeys]), let json = String(data: d, encoding: .utf8) else { return }
-        model.act("answer", ask.id + "|" + json)
+        if let v = Self.reply(ask, choices: choices, own: own) { model.act("answer", v) }
     }
 
     private func key(_ p: KeyPress) -> KeyPress.Result {

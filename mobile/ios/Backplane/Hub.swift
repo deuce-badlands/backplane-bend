@@ -24,7 +24,9 @@ enum Pairing {
               let p = URLComponents(string: path) else { return nil }
         c.scheme = w.scheme == "wss" ? "https" : "http"
         c.path = p.path
-        c.percentEncodedQuery = [p.percentEncodedQuery, c.percentEncodedQuery].compactMap { $0 }.joined(separator: "&")
+        let q = [p.percentEncodedQuery, c.percentEncodedQuery].compactMap { $0 }.joined(separator: "&")
+        // (no query at all rather than an empty one: "/plot", not "/plot?")
+        c.percentEncodedQuery = q.isEmpty ? nil : q
         return c.url
     }
 

@@ -642,11 +642,18 @@ struct SettingsSheet: View {
     let wide: Bool
     @AppStorage("settings.section") private var picked = ""
 
-    private var sections: [SetSection] {
+    private var sections: [SetSection] { Self.sections(of: settings) }
+
+    // the hub's sections, or (from a hub that sends none) the rows' own, in order
+    static func sections(of settings: Settings) -> [SetSection] {
         if let s = settings.sections, !s.isEmpty { return s }
         var seen: [String] = []
         for r in settings.rows where !seen.contains(r.section ?? "") { seen.append(r.section ?? "") }
         return seen.map { SetSection(title: $0, summary: "", attention: false) }
+    }
+
+    static func rows(of settings: Settings, in title: String) -> [SetRow] {
+        settings.rows.filter { ($0.section ?? "") == title }
     }
 
     private var current: SetSection? { sections.first { $0.title == picked } ?? sections.first }
@@ -675,7 +682,7 @@ struct SettingsSheet: View {
                 .frame(width: Platform.settingsSidebar)
                 Divider()
                 if let c = current {
-                    SettingsPane(model: model, section: c, rows: settings.rows.filter { ($0.section ?? "") == c.title }, header: true)
+                    SettingsPane(model: model, section: c, rows: Self.rows(of: settings, in: c.title), header: true)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -728,7 +735,7 @@ struct SettingsSheet: View {
             .inlineTitle()
             .navigationDestination(for: String.self) { t in
                 if let s = sections.first(where: { $0.title == t }) {
-                    SettingsPane(model: model, section: s, rows: settings.rows.filter { ($0.section ?? "") == t }, header: false)
+                    SettingsPane(model: model, section: s, rows: Self.rows(of: settings, in: t), header: false)
                         .navigationTitle(t)
                         .inlineTitle()
                 }
@@ -767,13 +774,16 @@ private struct SectionIcon: View {
 }
 
 // one section's rows, under their headings ("Installed")
-private struct SettingsPane: View {
+struct SettingsPane: View {
     let model: AppModel
     let section: SetSection
     let rows: [SetRow]
     let header: Bool
 
-    private var groups: [(title: String, rows: [SetRow])] {
+    private var groups: [(title: String, rows: [SetRow])] { Self.groups(rows) }
+
+    // consecutive rows under one heading, in order
+    static func groups(_ rows: [SetRow]) -> [(title: String, rows: [SetRow])] {
         var out: [(title: String, rows: [SetRow])] = []
         for r in rows {
             let t = r.group ?? ""

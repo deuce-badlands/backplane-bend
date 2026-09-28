@@ -77,7 +77,7 @@ def Mock.review() -> String:
   "| IMU_SCK | 41.2 mm | 45 mm | ok |\n| IMU_MOSI | 47.9 mm | 45 mm | over |\n| IMU_MISO | 46.3 mm | 45 mm | over |\n| IMU_CS | 38.0 mm | 45 mm | ok |\n\n" ++
   "MOSI and MISO detour around the **USB-C connector**. Moving `U4` 3 mm toward the MCU brings both under budget without new vias.\n\n" ++
   "```python\n# resources/check_spi_lengths.py\nBUDGET_MM = 45.0\nover = [n for n, mm in lengths.items() if mm > BUDGET_MM]\n```\n\n" ++
-  "Next:\n\n1. Move `U4` and rerun DRC.\n2. Add series 22 Ω resistors on SCK if ringing shows on the scope."
+  "Next:\n\n- Move `U4` and rerun DRC.\n- Add series 22 Ω resistors on SCK if ringing shows on the scope."
 
 def Mock.todos() -> String:
   "[{\"id\":\"1\",\"text\":\"Measure the SPI net lengths\",\"form\":\"Measuring the SPI net lengths\",\"status\":\"completed\"}," ++

@@ -38,7 +38,8 @@ struct BackplaneApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     #endif
     @Environment(\.scenePhase) private var phase
-    @State private var model = AppModel()
+    // under BackplaneTests the app is only their host: it pairs with nothing
+    @State private var model = AppModel(live: !Platform.testing)
 
     var body: some Scene {
         WindowGroup {

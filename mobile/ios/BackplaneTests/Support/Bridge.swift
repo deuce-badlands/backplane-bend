@@ -1,0 +1,75 @@
+import Foundation
+import JavaScriptCore
+
+// bridge.js on its own, as the app's Engine runs it (one thread with a deep
+// stack, JavaScriptCore) but answering the raw text of each call, so a test
+// can decode it with a throwing decoder and see which key broke.
+final class Bridge: @unchecked Sendable {
+    private final class Worker: Thread, @unchecked Sendable {
+        private let cond = NSCondition()
+        private var jobs: [() -> Void] = []
+
+        override init() {
+            super.init()
+            stackSize = 64 << 20
+            start()
+        }
+
+        func sync<T>(_ f: @escaping () -> T) -> T {
+            var out: T?
+            let done = DispatchSemaphore(value: 0)
+            cond.lock()
+            jobs.append { out = f(); done.signal() }
+            cond.signal()
+            cond.unlock()
+            done.wait()
+            return out!
+        }
+
+        override func main() {
+            while true {
+                cond.lock()
+                while jobs.isEmpty { cond.wait() }
+                let f = jobs.removeFirst()
+                cond.unlock()
+                f()
+            }
+        }
+    }
+
+    private let worker = Worker()
+    private var ctx: JSContext!
+    private(set) var errors: [String] = []
+
+    init() {
+        worker.sync {
+            let c = JSContext()!
+            c.exceptionHandler = { [weak self] _, e in self?.errors.append(e?.toString() ?? "?") }
+            let url = Bundle.main.url(forResource: "bridge", withExtension: "js")!
+            c.evaluateScript(try! String(contentsOf: url, encoding: .utf8), withSourceURL: url)
+            self.ctx = c
+        }
+    }
+
+    func call(_ name: String, _ args: [Any]) -> String {
+        worker.sync {
+            self.ctx.objectForKeyedSubscript("Backplane").invokeMethod(name, withArguments: args)?.toString() ?? ""
+        }
+    }
+
+    func recv(_ hub: String, _ frame: [String: Any]) -> String {
+        call("recv", [hub, CBOR.encode(frame).base64EncodedString()])
+    }
+
+    // a scene, as AppModel.replay feeds it: every answer's text, in order
+    func play(_ f: Fixture) -> [String] {
+        var out = [call("start", ["tests", "{}"]), call("hubs", [[f.hub]]), call("tick", [f.now]), call("online", [f.hub, true])]
+        for s in f.steps {
+            switch s {
+            case .recv(let frame): out.append(recv(f.hub, frame))
+            case .act(let a, let v): out.append(call("act", [a, v]))
+            }
+        }
+        return out
+    }
+}

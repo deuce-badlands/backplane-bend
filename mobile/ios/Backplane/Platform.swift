@@ -269,6 +269,11 @@ extension View {
 }
 
 enum Platform {
+    // the app is hosting BackplaneTests (xcodebuild test sets this)
+    static var testing: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     static func copy(_ text: String) {
         #if os(iOS)
         UIPasteboard.general.string = text

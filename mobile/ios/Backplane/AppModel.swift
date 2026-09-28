@@ -90,7 +90,13 @@ final class AppModel {
         #endif
     }
 
-    init() {
+    // live false: a model for tests, with no kept state, no hubs, no alerts
+    // and no clock (replay() feeds it a scene)
+    init(live: Bool = true) {
+        guard live else {
+            links = []
+            return
+        }
         #if DEBUG
         if let l = ProcessInfo.processInfo.environment["BACKPLANE_LINK"] { links = l.split(separator: " ").map(String.init) }
         #endif
@@ -125,6 +131,32 @@ final class AppModel {
             }
         }
     }
+
+    #if DEBUG
+    enum Step {
+        case recv(Data)
+        case act(String, String)
+    }
+
+    // A scene fed straight to the Bend client, as BackplaneTests replays its
+    // fixtures: the hub by its key, the clock, then the hub's frames (CBOR)
+    // and the user's actions in order. Each answer is applied as a hub's
+    // would be, so the screen is the one the app would show.
+    func replay(hub: String, now: Int, steps: [Step]) async {
+        links = ["http://" + hub]
+        let e = engine
+        apply(await e.start("tests", "{}"))
+        apply(await e.hubs([hub]))
+        apply(await e.tick(now))
+        apply(await e.online(hub, true))
+        for s in steps {
+            switch s {
+            case .recv(let d): apply(await e.recv(hub, d.base64EncodedString()))
+            case .act(let a, let v): apply(await e.act(a, v))
+            }
+        }
+    }
+    #endif
 
     // a new hub, or a new link to one already paired (it replaces the old)
     func pair(_ text: String) {
