@@ -210,13 +210,19 @@ struct PairView: View {
     }
 
     #if os(macOS)
-    // GET /hello answers without a token (server.bend, Hello.answer)
+    // GET /hello answers without a token (server.bend, Hello.answer): only
+    // a hub's answer, {"backplane": its version} in CBOR, offers this Mac,
+    // not whatever else might answer on the port
     private func probe() async {
         local = nil
         var r = URLRequest(url: URL(string: Self.localURL + "hello")!)
         r.timeoutInterval = 2
-        let ok = (try? await URLSession.shared.data(for: r)).map { ($0.1 as? HTTPURLResponse)?.statusCode == 200 } ?? false
-        local = ok
+        guard let (d, res) = try? await URLSession.shared.data(for: r) else { local = false; return }
+        local = Self.isHub(d, (res as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+
+    static func isHub(_ body: Data, _ status: Int) -> Bool {
+        status == 200 && (Cbor.decode(body) as? [String: Any])?["backplane"] is String
     }
     #endif
 }
@@ -1107,8 +1113,11 @@ struct ThreadScreen: View {
                         // while a turn runs with nothing typed the button stops it
                         let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         let stop = thread.sendAct == "interrupt" && blank
-                        Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 26))
+                        Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: Platform.sendSize))
                             .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
+                            // a finger's size to hit, whatever the glyph's
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
                             .onTapGesture {
                                 if stop { model.act("interrupt") } else if !blank { model.send() }
                             }

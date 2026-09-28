@@ -354,7 +354,9 @@ struct AttachButton: View {
             Button("Photos", systemImage: "photo.on.rectangle") { picking = true }
             Button("Files", systemImage: "folder") { importing = true }
         } label: {
-            Image(systemName: "paperclip").font(.system(size: 17)).foregroundStyle(.secondary)
+            Image(systemName: "paperclip").font(.system(size: Platform.attachSize)).foregroundStyle(.secondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
         .plainMenu()
         .accessibilityLabel("Attach")
@@ -527,7 +529,7 @@ struct TermSheet: View {
                 .defaultScrollAnchor(.bottomLeading)
                 .background(Self.color(term.bg))
                 .onTapGesture { typing = true }
-                .terminalKeys($typing) { press($0) }
+                .terminalKeys($typing, { press($0) }, paste: { model.act("term-paste", $0) })
                 #if os(iOS)
                 TextField("", text: $buf)
                     .focused($typing)
@@ -573,7 +575,7 @@ struct TermSheet: View {
             .inlineTitle()
             .barStyle(Self.color(term.bg), scheme: .dark)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { model.act("term-toggle") } }
+                ToolbarItem(placement: .closeBar) { Button("Close") { model.act("term-toggle") } }
             }
             .onAppear { typing = true }
         }

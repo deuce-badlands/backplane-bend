@@ -1226,6 +1226,8 @@ struct ViewerScreen: View {
 struct PlotScreen: View {
     let model: AppModel
     let viewer: Viewer
+    // a pane beside the thread (a Mac, an iPad), not the whole screen
+    @Environment(\.splitLayout) private var split
 
     var body: some View {
         // a plot for any other source is stale (a switch in flight)
@@ -1249,7 +1251,9 @@ struct PlotScreen: View {
                     .accessibilityLabel(viewer.light == true ? "Dark ground" : "Light ground")
                 Button { model.act("view", "") } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
-                    .keyboardShortcut(.cancelAction)
+                    // escape closes the viewer over the whole screen; a pane
+                    // beside the thread leaves escape to what is being typed
+                    .keyboardShortcut(split ? nil : .cancelAction)
                     .accessibilityLabel("Close")
             }
             .font(.body.weight(.medium))
@@ -1291,8 +1295,8 @@ struct PlotScreen: View {
             }
             .ignoresSafeArea(edges: .bottom)
         }
-        .viewerScheme(viewer.light == true ? .light : .dark)
-        .hiddenStatusBar()
+        .viewerScheme(viewer.light == true ? .light : .dark, pane: split)
+        .hiddenStatusBar(!split)
     }
 }
 

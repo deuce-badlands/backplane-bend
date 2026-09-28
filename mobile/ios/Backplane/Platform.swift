@@ -79,13 +79,18 @@ extension View {
         #endif
     }
 
-    // the terminal takes a Mac's keys itself; a phone types into a hidden field
-    func terminalKeys(_ focus: FocusState<Bool>.Binding, _ press: @escaping (KeyPress) -> KeyPress.Result) -> some View {
+    // the terminal takes a Mac's keys itself, and cmd+V (Edit > Paste) pastes
+    // the pasteboard's text into it; a phone types into a hidden field
+    func terminalKeys(_ focus: FocusState<Bool>.Binding, _ press: @escaping (KeyPress) -> KeyPress.Result,
+                      paste: @escaping (String) -> Void) -> some View {
         #if os(macOS)
         focusable()
             .focused(focus)
             .focusEffectDisabled()
             .onKeyPress(phases: [.down, .repeat], action: press)
+            .onPasteCommand(of: [.plainText]) { _ in
+                if let t = NSPasteboard.general.string(forType: .string), !t.isEmpty { paste(t) }
+            }
         #else
         self
         #endif
@@ -102,19 +107,22 @@ extension View {
     }
 
     // the viewer's own light or dark ground: the whole screen it covers on a
-    // phone, only its pane on a Mac (the thread beside it keeps the app's)
-    func viewerScheme(_ scheme: ColorScheme) -> some View {
+    // phone, only its pane beside the thread (a Mac, an iPad), where the
+    // thread keeps the app's
+    @ViewBuilder
+    func viewerScheme(_ scheme: ColorScheme, pane: Bool) -> some View {
         #if os(iOS)
-        preferredColorScheme(scheme)
+        if pane { environment(\.colorScheme, scheme) } else { preferredColorScheme(scheme) }
         #else
         environment(\.colorScheme, scheme)
         #endif
     }
 
-    // the viewer takes the whole phone screen; a Mac window has no status bar
-    func hiddenStatusBar() -> some View {
+    // the viewer over the whole phone screen hides its status bar; a pane
+    // (an iPad's, a Mac window) leaves it
+    func hiddenStatusBar(_ hidden: Bool) -> some View {
         #if os(iOS)
-        statusBarHidden()
+        statusBarHidden(hidden)
         #else
         self
         #endif
@@ -134,6 +142,16 @@ extension View {
 }
 
 extension ToolbarItemPlacement {
+    // a sheet's Close: escape on a phone's keyboard; on a Mac no key (a
+    // sheet's cancellation button takes escape, which the terminal needs)
+    static var closeBar: ToolbarItemPlacement {
+        #if os(iOS)
+        .cancellationAction
+        #else
+        .primaryAction
+        #endif
+    }
+
     static var leadingBar: ToolbarItemPlacement {
         #if os(iOS)
         .topBarLeading
@@ -223,15 +241,6 @@ extension View {
         #endif
     }
 
-    // a button that is a list row: on a Mac, the row itself, not a pill in it
-    func macRowButton() -> some View {
-        #if os(macOS)
-        buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
-        #else
-        self
-        #endif
-    }
-
     // a menu drawn as its label alone: no border, no indicator
     func plainMenu() -> some View {
         menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden).fixedSize()
@@ -257,10 +266,17 @@ extension View {
     }
 
     // a divider that can be dragged shows the resize cursor on a Mac
+    // (the pointer style holds for as long as the pointer is over it, and
+    // lets go with it; macOS 14 pushes and pops the cursor on hover)
+    @ViewBuilder
     func resizeCursor(horizontal: Bool) -> some View {
         #if os(macOS)
-        onHover { inside in
-            if inside { (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
+        if #available(macOS 15.0, *) {
+            pointerStyle(horizontal ? .columnResize : .rowResize)
+        } else {
+            onHover { inside in
+                if inside { (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
+            }
         }
         #else
         self
@@ -269,6 +285,24 @@ extension View {
 }
 
 enum Platform {
+    // the composer's send and attach glyphs: a phone's for a thumb, a Mac's
+    // for a pointer (both are hit over 44 points)
+    static var sendSize: CGFloat {
+        #if os(iOS)
+        32
+        #else
+        26
+        #endif
+    }
+
+    static var attachSize: CGFloat {
+        #if os(iOS)
+        20
+        #else
+        17
+        #endif
+    }
+
     // a long press that opens a menu is felt on a phone
     static func haptic() {
         #if os(iOS)
@@ -276,9 +310,14 @@ enum Platform {
         #endif
     }
 
-    // the app is hosting BackplaneTests (xcodebuild test sets this)
+    // the app is hosting BackplaneTests (xcodebuild test sets this); never
+    // in a release build, whatever its environment
     static var testing: Bool {
+        #if DEBUG
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        #else
+        false
+        #endif
     }
 
     static func copy(_ text: String) {
@@ -299,11 +338,12 @@ enum Platform {
         #endif
     }
 
+    // a phone registers for the hub's pushes; a Mac has no APNs
+    // entitlement (it posts its own alerts: postsAlertsInBackground), so
+    // asking would only fail
     static func registerForRemoteNotifications() {
         #if os(iOS)
         UIApplication.shared.registerForRemoteNotifications()
-        #else
-        NSApplication.shared.registerForRemoteNotifications()
         #endif
     }
 

@@ -51,4 +51,17 @@ struct PairingTests {
         #expect(Pairing.http("http://h:3787/#token=ab", path: "/hook", query: [URLQueryItem(name: "id", value: "1")])?.absoluteString == "http://h:3787/hook?token=ab&id=1")
         #expect(Pairing.http("http://h:3787/#token=ab", path: "/hook", token: false)?.absoluteString == "http://h:3787/hook")
     }
+
+    #if os(macOS)
+    @Test("only a hub's hello offers this Mac")
+    func hello() {
+        // a hub's answer: {"backplane": "0.10.0"} (Hello.answer)
+        let hub = CBOR.encode(["backplane": "0.10.0"])
+        #expect(PairView.isHub(hub, 200))
+        #expect(!PairView.isHub(hub, 404))
+        #expect(!PairView.isHub(Data("<html>ok</html>".utf8), 200))
+        #expect(!PairView.isHub(CBOR.encode(["other": "1"]), 200))
+        #expect(!PairView.isHub(Data(), 200))
+    }
+    #endif
 }
