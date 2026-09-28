@@ -20,7 +20,7 @@ struct SnapshotTests {
     // Settings remembers the section last shown; each image names its own
     // (and leaves the viewer's choice as it was)
     private func showing<T>(_ section: String, _ body: () throws -> T) rethrows -> T {
-        let d = UserDefaults.standard
+        let d = Platform.defaults
         let was = d.string(forKey: "settings.section")
         d.set(section, forKey: "settings.section")
         defer { d.set(was, forKey: "settings.section") }

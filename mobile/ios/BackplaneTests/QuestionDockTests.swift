@@ -10,7 +10,7 @@ import Testing
 struct QuestionDockTests {
     private func scene() throws -> (Bridge, Fixture) {
         let f = try Fixture.load("thread-question")
-        let b = Bridge()
+        let b = try Bridge()
         _ = b.play(f)
         return (b, f)
     }

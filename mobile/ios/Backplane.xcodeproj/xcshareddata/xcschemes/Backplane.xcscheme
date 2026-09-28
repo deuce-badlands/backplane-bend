@@ -5,6 +5,24 @@
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES">
+      <PreActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Build bridge.js"
+               scriptText = "# The app runs bridge.js, built from this checkout&apos;s Bend (src/mobile):&#10;# build it first, so neither the app nor its tests run a stale one.&#10;# (scripts/build-ios.sh and scripts/test-apple.sh build it too.)&#10;cd &quot;${SRCROOT}/../..&quot; || exit 1&#10;PATH=&quot;$HOME/.bend/bin:$PATH&quot;&#10;if ! command -v bend &gt;/dev/null; then&#10;  echo &quot;warning: no bend on PATH: the app keeps the bridge.js already built&quot;&#10;  exit 0&#10;fi&#10;log=&quot;${TMPDIR:-/tmp}/backplane-bridge-js.log&quot;&#10;scripts/build-mobile.sh --js &gt; &quot;$log&quot; 2&gt;&amp;1 &amp;&amp; cp mobile/build/assets/bridge.js mobile/ios/Backplane/bridge.js || echo &quot;error: building bridge.js failed, see $log&quot;&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "A10000000000000000000006"
+                     BuildableName = "Backplane.app"
+                     BlueprintName = "Backplane"
+                     ReferencedContainer = "container:Backplane.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PreActions>
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -32,7 +50,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Bring back the Mac snapshots"
-               scriptText = "# The Mac tests run inside the sandboxed app, which cannot write the&#10;# source tree: the snapshots they recorded wait in the app&apos;s container&#10;# (BackplaneTests/Snapshot.swift). Bring them into __Snapshots__.&#10;src=&quot;$HOME/Library/Containers/${BASE_BUNDLE_ID}/Data/tmp/BackplaneSnapshots&quot;&#10;[ -d &quot;$src&quot; ] || exit 0&#10;rsync -rc &quot;$src/&quot; &quot;${SRCROOT}/BackplaneTests/__Snapshots__/&quot;&#10;rm -rf &quot;$src&quot;&#10;">
+               scriptText = "# The Mac tests run inside the sandboxed app, which cannot write the&#10;# source tree: the snapshots they recorded wait in the app&apos;s container&#10;# (BackplaneTests/Support/Snapshot.swift). Bring them into __Snapshots__.&#10;src=&quot;$HOME/Library/Containers/${BASE_BUNDLE_ID}/Data/tmp/BackplaneSnapshots&quot;&#10;[ -d &quot;$src&quot; ] || exit 0&#10;rsync -rc &quot;$src/&quot; &quot;${SRCROOT}/BackplaneTests/__Snapshots__/&quot;&#10;rm -rf &quot;$src&quot;&#10;">
                <EnvironmentBuildable>
                   <BuildableReference
                      BuildableIdentifier = "primary"

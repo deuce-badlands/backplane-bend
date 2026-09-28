@@ -10,7 +10,10 @@ import Observation
 final class AppModel {
     private let engine = Engine()
     // the client's state, kept for the next launch (StateStore)
-    private let kept = StateStore()
+    // (a model for tests keeps nothing: StateStore clears other builds' files)
+    private let kept: StateStore?
+    // false: a model for tests (init(live:))
+    private let live: Bool
     // something changed since the state was last kept
     @ObservationIgnored private var dirty = false
     @ObservationIgnored private var hubs: [String: Hub] = [:]
@@ -23,8 +26,8 @@ final class AppModel {
     @ObservationIgnored private var ready = false
 
     // the pairing links, one per hub, in the order they were paired
-    private(set) var links: [String] = UserDefaults.standard.stringArray(forKey: "links")
-        ?? UserDefaults.standard.string(forKey: "link").map { [$0] } ?? []
+    private(set) var links: [String] = Platform.defaults.stringArray(forKey: "links")
+        ?? Platform.defaults.string(forKey: "link").map { [$0] } ?? []
     private(set) var screen: Screen?
     // the board viewer's plots, which come straight from the socket
     let plots = PlotStore()
@@ -66,15 +69,15 @@ final class AppModel {
 
     // this install's id, part of every message id (a resend is stored once)
     private static var cid: String {
-        if let c = UserDefaults.standard.string(forKey: "cid") { return c }
+        if let c = Platform.defaults.string(forKey: "cid") { return c }
         let c = String(format: "%08x", UInt32.random(in: 0 ... UInt32.max))
-        UserDefaults.standard.set(c, forKey: "cid")
+        Platform.defaults.set(c, forKey: "cid")
         return c
     }
 
     // a thread's draft, written at once (a crash loses nothing typed); "" forgets it
     private static func keep(_ thread: String, _ text: String) {
-        let d = UserDefaults.standard
+        let d = Platform.defaults
         var o = (try? JSONSerialization.jsonObject(with: Data((d.string(forKey: "drafts") ?? "{}").utf8))) as? [String: String] ?? [:]
         o[thread] = text.isEmpty ? nil : text
         if let data = try? JSONSerialization.data(withJSONObject: o), let s = String(data: data, encoding: .utf8) {
@@ -93,10 +96,13 @@ final class AppModel {
     // live false: a model for tests, with no kept state, no hubs, no alerts
     // and no clock (replay() feeds it a scene)
     init(live: Bool = true) {
+        self.live = live
         guard live else {
             links = []
+            kept = nil
             return
         }
+        kept = StateStore()
         #if DEBUG
         if let l = ProcessInfo.processInfo.environment["BACKPLANE_LINK"] { links = l.split(separator: " ").map(String.init) }
         #endif
@@ -104,10 +110,10 @@ final class AppModel {
         notifier.viewing = { [weak self] id in self?.active == true && self?.screen?.sel == id }
         let e = engine
         Task {
-            apply(await e.start(Self.cid, UserDefaults.standard.string(forKey: "drafts") ?? "{}"))
+            apply(await e.start(Self.cid, Platform.defaults.string(forKey: "drafts") ?? "{}"))
             // the state kept at the last launch: the screen shows at once, and
             // each hub then sends only what came since
-            if let text = kept.load() {
+            if let text = kept?.load() {
                 apply(await e.load(text))
                 for l in links { if let k = Pairing.key(l) { apply(await e.offline(k)) } }
             }
@@ -182,8 +188,8 @@ final class AppModel {
     }
 
     private func save() {
-        UserDefaults.standard.set(links, forKey: "links")
-        UserDefaults.standard.removeObject(forKey: "link")
+        Platform.defaults.set(links, forKey: "links")
+        Platform.defaults.removeObject(forKey: "link")
     }
 
     // an APNs token for this device's alerts (from the app delegate)
@@ -410,7 +416,8 @@ final class AppModel {
     func keep() {
         guard dirty, ready else { return }
         dirty = false
-        let e = engine, k = kept
+        guard let k = kept else { return }
+        let e = engine
         Task { k.save(await e.save()) }
     }
 
@@ -484,12 +491,14 @@ final class AppModel {
         for c in o.cmds {
             switch c.type {
             case "send": if let d = Data(base64Encoded: c.data ?? "") { hubs[c.hub ?? ""]?.send(d) }
-            case "copy": Platform.copy(c.text ?? "")
+            // a model for tests touches nothing outside itself: no
+            // pasteboard, no kept drafts, no alerts
+            case "copy": if live { Platform.copy(c.text ?? "") }
             case "scroll": scrolls += 1
-            case "keep": Self.keep(c.thread ?? "", c.text ?? "")
+            case "keep": if live { Self.keep(c.thread ?? "", c.text ?? "") }
             // while asleep the hub's push carries the alert instead (a Mac
             // app is never asleep: it posts its own, see Platform)
-            case "notify": if active || Platform.postsAlertsInBackground { notifier.post(thread: c.thread ?? "", key: c.key ?? "", title: c.title ?? "", body: c.body ?? "") }
+            case "notify": if live, active || Platform.postsAlertsInBackground { notifier.post(thread: c.thread ?? "", key: c.key ?? "", title: c.title ?? "", body: c.body ?? "") }
             default: break
             }
         }

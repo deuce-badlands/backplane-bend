@@ -8,6 +8,7 @@ final class Bridge: @unchecked Sendable {
     private final class Worker: Thread, @unchecked Sendable {
         private let cond = NSCondition()
         private var jobs: [() -> Void] = []
+        private var done = false
 
         override init() {
             super.init()
@@ -26,10 +27,22 @@ final class Bridge: @unchecked Sendable {
             return out!
         }
 
+        // the thread ends once the jobs already given are run
+        func finish() {
+            cond.lock()
+            done = true
+            cond.signal()
+            cond.unlock()
+        }
+
         override func main() {
             while true {
                 cond.lock()
-                while jobs.isEmpty { cond.wait() }
+                while jobs.isEmpty, !done { cond.wait() }
+                if jobs.isEmpty {
+                    cond.unlock()
+                    return
+                }
                 let f = jobs.removeFirst()
                 cond.unlock()
                 f()
@@ -41,15 +54,27 @@ final class Bridge: @unchecked Sendable {
     private var ctx: JSContext!
     private(set) var errors: [String] = []
 
-    init() {
-        worker.sync {
-            let c = JSContext()!
-            c.exceptionHandler = { [weak self] _, e in self?.errors.append(e?.toString() ?? "?") }
-            let url = Bundle.main.url(forResource: "bridge", withExtension: "js")!
-            c.evaluateScript(try! String(contentsOf: url, encoding: .utf8), withSourceURL: url)
-            self.ctx = c
-        }
+    struct NoBridge: Error, CustomStringConvertible {
+        let why: String
+        // the scheme builds bridge.js before each build, but a file missing when
+        // the build starts is only bundled by the next one
+        var description: String { "bridge.js: \(why) (scripts/test-apple.sh builds it; in Xcode, build again)" }
     }
+
+    init() throws {
+        guard let url = Bundle.main.url(forResource: "bridge", withExtension: "js") else { throw NoBridge(why: "not in the app") }
+        let src = try String(contentsOf: url, encoding: .utf8)
+        let ok: Bool = worker.sync {
+            guard let c = JSContext() else { return false }
+            c.exceptionHandler = { [weak self] _, e in self?.errors.append(e?.toString() ?? "?") }
+            c.evaluateScript(src, withSourceURL: url)
+            self.ctx = c
+            return c.objectForKeyedSubscript("Backplane")?.isObject == true
+        }
+        if !ok { worker.finish(); throw NoBridge(why: "defines no Backplane" + (errors.first.map { ": " + $0 } ?? "")) }
+    }
+
+    deinit { worker.finish() }
 
     func call(_ name: String, _ args: [Any]) -> String {
         worker.sync {

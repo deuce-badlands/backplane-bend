@@ -64,8 +64,14 @@ struct Fixture {
             for _ in 0 ..< 400 where m.plots.frame == nil || (k == "3d" && m.plots.mesh == nil) {
                 try await Task.sleep(for: .milliseconds(25))
             }
+            if m.plots.frame == nil || (k == "3d" && m.plots.mesh == nil) { throw NoPlot(kind: k) }
         }
         return m
+    }
+
+    struct NoPlot: Error, CustomStringConvertible {
+        let kind: String
+        var description: String { "the \(kind) capture gave the viewer no \(kind == "3d" ? "model" : "frame") within 10 s" }
     }
 }
 

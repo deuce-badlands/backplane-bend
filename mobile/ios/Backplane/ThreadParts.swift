@@ -642,7 +642,7 @@ struct SettingsSheet: View {
     let version: String
     // sections beside the chosen one (a Mac, an iPad), or a list that pushes
     let wide: Bool
-    @AppStorage("settings.section") private var picked = ""
+    @AppStorage("settings.section", store: Platform.defaults) private var picked = ""
     // a row's field is being typed in: return is its own, not Done's
     @State private var typing = false
 

@@ -46,8 +46,43 @@ enum Device: String {
     }
 }
 
-// how long a screen is left to lay itself out before it is drawn
+// how long a screen is left to draw once laid out
 private let settle: TimeInterval = 0.5
+
+#if os(macOS)
+// every view in the tree, by its kind and where it sits
+private func layout(_ v: NSView, into h: inout Hasher) {
+    h.combine(ObjectIdentifier(type(of: v)))
+    h.combine(v.frame.origin.x); h.combine(v.frame.origin.y)
+    h.combine(v.frame.size.width); h.combine(v.frame.size.height)
+    h.combine(v.isHidden)
+    for s in v.subviews { layout(s, into: &h) }
+}
+
+// A screen lays itself out over several turns of the run loop (a lazy list
+// adds its rows, a split view places its columns): wait until its view tree
+// is the same for five turns running, and fail rather than draw one still
+// moving. (On iOS the library puts the screen in the key window itself and
+// waits `settle` there.)
+@MainActor
+private func settled(_ v: NSView) {
+    let limit = Date().addingTimeInterval(3)
+    var last = 0, same = 0
+    while same < 5 {
+        guard Date() < limit else {
+            Issue.record("the screen was still laying itself out after 3 s")
+            return
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        v.layoutSubtreeIfNeeded()
+        var h = Hasher()
+        layout(v, into: &h)
+        let now = h.finalize()
+        same = now == last ? same + 1 : 0
+        last = now
+    }
+}
+#endif
 
 private var recording: SnapshotTestingConfiguration.Record {
     switch ProcessInfo.processInfo.environment["SNAPSHOT_RECORD"] {
@@ -120,6 +155,7 @@ func assertSnapshot<V: View>(_ view: V, device: Device, size: CGSize? = nil, nam
         // the blur behind a floating sidebar
         if String(describing: type(of: v)) == "BackdropView" { v.isHidden = true }
     }
+    settled(host)
     plain(host)
     host.layoutSubtreeIfNeeded()
     let suite = URL(fileURLWithPath: "\(file)").deletingPathExtension().lastPathComponent

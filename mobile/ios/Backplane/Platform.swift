@@ -320,6 +320,12 @@ enum Platform {
         #endif
     }
 
+    // where the app keeps its small settings (paired hubs, drafts, the
+    // Settings section): under BackplaneTests a suite of their own, so a
+    // test run never reads or writes the installed app's (on a Mac the test
+    // host shares its container)
+    static let defaults: UserDefaults = testing ? UserDefaults(suiteName: "dev.backplane.tests")! : .standard
+
     static func copy(_ text: String) {
         #if os(iOS)
         UIPasteboard.general.string = text

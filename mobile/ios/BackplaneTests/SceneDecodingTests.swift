@@ -17,7 +17,7 @@ struct SceneDecodingTests {
     @Test("every answer decodes", arguments: Fixture.names)
     func everyAnswer(_ name: String) throws {
         let f = try Fixture.load(name)
-        let b = Bridge()
+        let b = try Bridge()
         let outs = b.play(f)
         #expect(b.errors.isEmpty, "bridge.js threw: \(b.errors)")
         for (i, text) in outs.enumerated() {

@@ -19,7 +19,7 @@ struct BridgeRequestTests {
 
     private func scene(_ name: String) throws -> (Bridge, Fixture) {
         let f = try Fixture.load(name)
-        let b = Bridge()
+        let b = try Bridge()
         _ = b.play(f)
         return (b, f)
     }
