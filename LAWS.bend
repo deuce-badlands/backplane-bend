@@ -2036,6 +2036,13 @@ law ask_makes_pending:
 # map, which the hub keeps marked, and every question gets its answer;
 # words (typed, or a button) answer the first question as they are, even
 # words that look like JSON; only the map's text answers go through
+# Claude asks Backplane through its permission prompt tool in every mode,
+# full access too: Claude Code offers AskUserQuestion and plan mode in a -p
+# session only when the tool is named (bypassPermissions still runs every
+# other tool unasked)
+law claude_prompt_tool_every_mode:
+  {Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.Supervised{}, M.DefaultMode{}, "", Nil{}), "--permission-prompt-tool"), Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.Supervised{}, M.PlanMode{}, "", Nil{}), "--permission-prompt-tool"), Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.AcceptEdits{}, M.DefaultMode{}, "", Nil{}), "--permission-prompt-tool"), Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.AcceptEdits{}, M.PlanMode{}, "", Nil{}), "--permission-prompt-tool"), Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.AutoMode{}, M.DefaultMode{}, "", Nil{}), "--permission-prompt-tool"), Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.AutoMode{}, M.PlanMode{}, "", Nil{}), "--permission-prompt-tool"), Bool.and(List.contains(~String, ~String.eq, PM.Claude.args("", "", M.FullAccess{}, M.DefaultMode{}, "", Nil{}), "--permission-prompt-tool"), List.contains(~String, ~String.eq, PM.Claude.args("", "", M.FullAccess{}, M.PlanMode{}, "", Nil{}), "--permission-prompt-tool")))))))) == True{} : Bool}
+
 law perm_answers_every_question:
   {J.Json.get_str(J.Json.get_obj(MC.Perm.answers(J.Json.obj([J.KV{"questions", J.Json.arr([J.Json.obj([J.KV{"question", J.Str{"Q1"}}]), J.Json.obj([J.KV{"question", J.Str{"Q2"}}])])}]), M.Answers.mark() ++ "{\"Q1\":\"a\",\"Q2\":\"b\"}"), "answers"), "Q2", "") == "b" : String}
 

@@ -4147,6 +4147,9 @@ def Laws.carry_once():
 def Laws.ask_makes_pending():
   {==}
 
+def Laws.claude_prompt_tool_every_mode():
+  {==}
+
 def Laws.perm_answers_every_question():
   {==}
 
