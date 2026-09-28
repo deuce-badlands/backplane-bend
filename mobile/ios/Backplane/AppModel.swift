@@ -136,6 +136,9 @@ final class AppModel {
     enum Step {
         case recv(Data)
         case act(String, String)
+        // a frame as the socket hands it over: a plot goes to the viewer,
+        // anything else to the Bend client (open(_:_:)'s onMessage)
+        case frame(Data)
     }
 
     // A scene fed straight to the Bend client, as BackplaneTests replays its
@@ -155,6 +158,8 @@ final class AppModel {
             switch s {
             case .recv(let d): apply(await e.recv(hub, d.base64EncodedString()))
             case .act(let a, let v): apply(await e.act(a, v))
+            case .frame(let d):
+                if PlotStore.isPlot(d) { plots.receive(d) } else { apply(await e.recv(hub, d.base64EncodedString())) }
             }
         }
     }

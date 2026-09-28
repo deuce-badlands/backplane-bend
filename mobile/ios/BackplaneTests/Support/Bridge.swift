@@ -61,6 +61,13 @@ final class Bridge: @unchecked Sendable {
         call("recv", [hub, CBOR.encode(frame).base64EncodedString()])
     }
 
+    // a plot frame: a map whose first key is 1 ("t") and value "plot"
+    // (PlotStore.isPlot, without the main actor)
+    static func isPlot(_ d: Data) -> Bool {
+        let b = [UInt8](d.prefix(7))
+        return b.count == 7 && (0xA0 ... 0xB7).contains(b[0]) && b[1] == 1 && Array(b[2...]) == [0x64, 0x70, 0x6C, 0x6F, 0x74]
+    }
+
     // a scene, as AppModel.replay feeds it: every answer's text, in order
     func play(_ f: Fixture) -> [String] {
         var out = [call("start", ["tests", "{}"]), call("hubs", [[f.hub]]), call("tick", [f.now]), call("online", [f.hub, true])]
@@ -68,6 +75,11 @@ final class Bridge: @unchecked Sendable {
             switch s {
             case .recv(let frame): out.append(recv(f.hub, frame))
             case .act(let a, let v): out.append(call("act", [a, v]))
+            // plots go to the viewer, never through bridge.js
+            case .capture(let k):
+                for d in (try? Fixture.captured(k)) ?? [] where !Self.isPlot(d) {
+                    out.append(call("recv", [f.hub, d.base64EncodedString()]))
+                }
             }
         }
         return out

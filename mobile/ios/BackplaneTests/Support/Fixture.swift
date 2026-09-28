@@ -8,11 +8,21 @@ struct Fixture {
     enum Step {
         case recv([String: Any])
         case act(String, String)
+        // what a hub sent a phone watching the viewer's sample (Viewer/<kind>.capture)
+        case capture(String)
     }
 
     let name, about, hub: String
     let now: Int
     let steps: [Step]
+
+    // the frames a hub sent a phone watching the sample's view (kind: board,
+    // schematic, 3d), captured by scripts/apple-viewer-fixtures.sh
+    static func captured(_ kind: String) throws -> [Data] {
+        guard let url = Bundle(for: Token.self).url(forResource: kind, withExtension: "capture") else { throw Missing(name: kind + ".capture") }
+        let o = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
+        return (o["frames"] as? [String] ?? []).compactMap { Data(base64Encoded: $0) }
+    }
 
     // every scene in the bundle, so a new one is replayed and decoded with the rest
     static let names: [String] = (Bundle(for: Token.self).urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
@@ -24,6 +34,7 @@ struct Fixture {
         let steps: [Step] = (o["steps"] as? [[String: Any]] ?? []).compactMap { s in
             if let f = s["recv"] as? [String: Any] { return .recv(f) }
             if let a = s["act"] as? [String], a.count == 2 { return .act(a[0], a[1]) }
+            if let k = s["capture"] as? String { return .capture(k) }
             return nil
         }
         return Fixture(name: name, about: o["about"] as? String ?? "", hub: o["hub"] as? String ?? "", now: o["now"] as? Int ?? 0, steps: steps)
@@ -36,14 +47,24 @@ struct Fixture {
 
     // the app's model, fed this scene with no hub and no kept state
     @MainActor
-    func model() async -> AppModel {
+    func model() async throws -> AppModel {
         let m = AppModel(live: false)
-        await m.replay(hub: hub, now: now, steps: steps.map {
-            switch $0 {
-            case .recv(let f): .recv(CBOR.encode(f))
-            case .act(let a, let v): .act(a, v)
+        var app: [AppModel.Step] = []
+        for s in steps {
+            switch s {
+            case .recv(let f): app.append(.recv(CBOR.encode(f)))
+            case .act(let a, let v): app.append(.act(a, v))
+            case .capture(let k): app += try Self.captured(k).map { .frame($0) }
             }
-        })
+        }
+        await m.replay(hub: hub, now: now, steps: app)
+        // plots are decoded off the main thread: wait for the viewer's (and
+        // for 3D, its model too)
+        for case .capture(let k) in steps {
+            for _ in 0 ..< 400 where m.plots.frame == nil || (k == "3d" && m.plots.mesh == nil) {
+                try await Task.sleep(for: .milliseconds(25))
+            }
+        }
         return m
     }
 }

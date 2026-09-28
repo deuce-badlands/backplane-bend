@@ -10,8 +10,8 @@ import Testing
 struct SceneDecodingTests {
     @Test("the scenes are in the bundle")
     func bundled() {
-        // test/apple_fixtures.bend writes seven
-        #expect(Fixture.names.count == 7, "\(Fixture.names)")
+        // test/apple_fixtures.bend writes ten
+        #expect(Fixture.names.count == 10, "\(Fixture.names)")
     }
 
     @Test("every answer decodes", arguments: Fixture.names)

@@ -141,6 +141,10 @@ The iPhone, iPad and Mac app has three layers of tests:
   - Also covered: what each scene shows, through `AppModel` itself; what the app asks the hub for; the question dock's answers; the Settings layout; pairing links; and the board viewer's decoding.
   - `scripts/test.sh` fails when a Bend change would alter the fixtures and they were not written again.
 - **Snapshots** (swift-snapshot-testing): every scene on iPhone, iPad and Mac, in `BackplaneTests/__Snapshots__/SnapshotTests`. They double as pictures of the app on every device.
+- **The board viewer** is snapshotted on a sample board: KiCad's RoyalBlue54L Feather demo (CERN-OHL-P v2; `BackplaneTests/Fixtures/Viewer/NOTICE.md`).
+  - The layout, schematic and 3D frames are captured from a real hub by `scripts/apple-viewer-fixtures.sh`. It fetches the demo at a pinned KiCad commit and runs a hub of its own (own port and home).
+  - The tests feed the captures to the app as the socket would.
+  - A Metal layer draws only on a screen, so under tests the canvas also shows its frame as a still image (`PlotRenderer.image(of:)`), which the snapshots take.
 
 ```sh
 scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulator (iPhone 17 Pro)

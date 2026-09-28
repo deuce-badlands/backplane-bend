@@ -150,9 +150,29 @@ def Mock.items(cs: List<&2, M.Change>) -> List<&2, J.Json>:
       K.Change.encode(c) <> Mock.items(t)
 
 # the hub's first frame: its whole log, its version and its machine info
-def Mock.log(m: MockMachine) -> J.Json:
-  J.Json.obj([J.KV{"t", J.Json.str("log")}, J.KV{"items", J.Json.arr(Mock.items(Mock.log.changes()))},
+def Mock.log.of(cs: List<&2, M.Change>, m: MockMachine) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("log")}, J.KV{"items", J.Json.arr(Mock.items(cs))},
     J.KV{"version", J.Json.str(Mock.version())}, J.KV{"origin", J.Json.str("o1")}, J.KV{"info", Mock.info(m)}])
+
+def Mock.log(m: MockMachine) -> J.Json:
+  Mock.log.of(Mock.log.changes(), m)
+
+# The board viewer's sample: KiCad's RoyalBlue54L Feather demo (CERN-OHL-P
+# v2), where scripts/apple-viewer-fixtures.sh put it to capture what a hub
+# sends a phone watching it (the captures name this root)
+def Mock.sample.root() -> String:
+  "/tmp/backplane-sample/RoyalBlue54L-Feather"
+
+def Mock.sample.changes() -> List<&2, M.Change>:
+  [M.ProjectCreated{"p4", "royalblue54l-feather", Mock.sample.root(), Mock.ago(3600n)},
+   M.ThreadCreated{"t7", "p4", "Walk me through the board", M.Local{}, "", "", "claude", "opus", Mock.ago(900n)},
+   Mock.user("t7", "m10", "Open the board and walk me through the power path.", Mock.ago(880n)),
+   Mock.agent("t7", "m11", "The layout is open beside the thread. Tap a part to see what it is, or mention it in the chat and I will trace it from there.", Mock.ago(860n)),
+   M.TurnChanged{"t7", M.Completed{}, Mock.ago(850n)}]
+
+# the log with the sample's project in it, for the viewer's scenes
+def Mock.log.sample() -> J.Json:
+  Mock.log.of(List.append(&2, M.Change, Mock.log.changes(), Mock.sample.changes()), Mock.machine())
 
 # the hub's answer to Settings' voice status request: a saved key (masked),
 # the dictionary, and the machine's microphones

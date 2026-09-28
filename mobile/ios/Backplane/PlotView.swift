@@ -406,12 +406,37 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
 
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable, let cb = queue.makeCommandBuffer() else { return }
+        guard encode(cb, into: drawable.texture, k: Float(view.pixelScale)) else { return }
+        cb.present(drawable)
+        cb.commit()
+    }
+
+    // One frame of the view drawn offscreen, as draw(in:) draws it on the
+    // screen: a Metal layer shows only on a screen, so this is what a
+    // snapshot of the viewer takes (BackplaneTests).
+    func image(of view: MTKView) -> CGImage? {
         let w = Int(view.drawableSize.width), h = Int(view.drawableSize.height)
-        guard w > 0, h > 0 else { return }
+        guard w > 0, h > 0, let cb = queue.makeCommandBuffer() else { return nil }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d), encode(cb, into: t, k: Float(view.pixelScale)) else { return nil }
+        cb.commit()
+        cb.waitUntilCompleted()
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        t.getBytes(&px, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        guard let data = CGDataProvider(data: Data(px) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue),
+                       provider: data, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
+    // the frame into t (w by h pixels, k pixels a point); false when there is nothing to draw into
+    private func encode(_ cb: MTLCommandBuffer, into t: MTLTexture, k: Float) -> Bool {
+        let w = t.width, h = t.height
+        guard w > 0, h > 0 else { return false }
         targets(w, h)
-        let k = Float(view.pixelScale)
         var u = Uniforms(size: SIMD2(Float(w), Float(h)), off: off * k, scale: scale * k, fade: 1, color: .zero)
-        let t = drawable.texture
         if three {
             u.mvp = orbit.mvp(Float(w) / Float(h))
             u.focal = 1 / tan(orbit.fov * .pi / 360) * Float(h) / 2
@@ -473,8 +498,7 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
             }
             hi(cb, t, &u)
         }
-        cb.present(drawable)
-        cb.commit()
+        return true
     }
 }
 
@@ -534,15 +558,56 @@ final class PlotCanvas: MTKView {
         if let s = window?.windowScene?.screen { contentScaleFactor = s.nativeScale }
     }
 
-    func redraw() { setNeedsDisplay() }
+    func redraw() {
+        setNeedsDisplay()
+        #if DEBUG
+        still()
+        #endif
+    }
     private func relayout() { setNeedsLayout() }
     #else
     // y grows down, as on iOS: the board's transforms are shared
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    func redraw() { needsDisplay = true }
+    func redraw() {
+        needsDisplay = true
+        #if DEBUG
+        still()
+        #endif
+    }
     private func relayout() { needsLayout = true }
+    #endif
+
+    #if DEBUG
+    // Under BackplaneTests the canvas also shows its frame as a still
+    // image over itself: a Metal layer draws only on a screen, so this is
+    // what a snapshot takes (the frame as it is once any fade is done).
+    #if os(iOS)
+    private var stillView: UIImageView?
+    #else
+    private var stillView: NSImageView?
+    #endif
+
+    private func still() {
+        // (at once: a test waiting on the main actor never lets queued work run)
+        guard Platform.testing, drawableSize.width > 0 else { return }
+        renderer.fade = 1
+        guard let img = renderer.image(of: self) else { return }
+        #if os(iOS)
+        let v = stillView ?? UIImageView()
+        v.image = UIImage(cgImage: img, scale: pixelScale, orientation: .up)
+        #else
+        let v = stillView ?? NSImageView()
+        v.imageScaling = .scaleAxesIndependently
+        v.image = NSImage(cgImage: img, size: bounds.size)
+        #endif
+        v.frame = bounds
+        if stillView == nil {
+            addSubview(v)
+            stillView = v
+        }
+    }
     #endif
 
     private var three: Bool { renderer.three }
@@ -578,11 +643,17 @@ final class PlotCanvas: MTKView {
     override func layoutSubviews() {
         super.layoutSubviews()
         if !fitted { refit() }
+        #if DEBUG
+        still()
+        #endif
     }
     #else
     override func layout() {
         super.layout()
         if !fitted { refit() }
+        #if DEBUG
+        still()
+        #endif
     }
     #endif
 

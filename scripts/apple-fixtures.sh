@@ -13,8 +13,8 @@ bend test/apple_fixtures.bend > "$tmp/raw" 2>&1 || { cat "$tmp/raw"; exit 1; }
 # (bend's own notice of a newer release is not the program's output)
 grep -v 'is available: run bend update' "$tmp/raw" > "$tmp/out" || true
 # every line is "<scene>\t<json>"; anything else is bend reporting an error
-if grep -qv "$(printf '^[a-z-]*\t{')" "$tmp/out"; then
-  grep -v "$(printf '^[a-z-]*\t{')" "$tmp/out"
+if grep -qv "$(printf '^[a-z0-9-]*\t{')" "$tmp/out"; then
+  grep -v "$(printf '^[a-z0-9-]*\t{')" "$tmp/out"
   exit 1
 fi
 mkdir -p "$tmp/new"
@@ -22,11 +22,12 @@ while IFS="$(printf '\t')" read -r name json; do
   printf '%s\n' "$json" | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))' > "$tmp/new/$name.json"
 done < "$tmp/out"
 if [ "${1:-}" = --check ]; then
-  diff -r "$dir" "$tmp/new" || { echo "the Apple test fixtures are out of date: run scripts/apple-fixtures.sh"; exit 1; }
+  # (Viewer/ holds the viewer's captures, scripts/apple-viewer-fixtures.sh)
+  diff -r -x Viewer "$dir" "$tmp/new" || { echo "the Apple test fixtures are out of date: run scripts/apple-fixtures.sh"; exit 1; }
   echo "apple fixtures: up to date"
 else
-  rm -rf "$dir"
   mkdir -p "$dir"
+  rm -f "$dir"/*.json
   cp "$tmp/new/"*.json "$dir/"
-  echo "wrote $(ls "$dir" | wc -l | tr -d ' ') fixtures to $dir"
+  echo "wrote $(ls "$dir"/*.json | wc -l | tr -d ' ') fixtures to $dir"
 fi

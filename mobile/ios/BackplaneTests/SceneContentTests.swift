@@ -111,4 +111,28 @@ struct SceneContentTests {
         #expect(st.rows.first { $0.label == "KiCad IPC" }?.buttons.map(\.action) == ["kicad-install"])
         #expect(st.rows.first { $0.label.hasPrefix("Backplane ") }?.buttons.map(\.action) == ["update"])
     }
+
+    // The viewer on the sample board (KiCad's RoyalBlue54L Feather demo):
+    // the frames a real hub sent, applied as the socket hands them over.
+    @Test("the viewer draws what the hub sent", arguments: ["board", "schematic", "3d"])
+    func viewer(_ kind: String) async throws {
+        let (m, s) = try await screen("viewer-" + kind)
+        let v = try #require(s.thread?.viewer)
+        #expect(v.open == kind)
+        #expect(v.choices.map(\.value) == ["board", "schematic", "3d"])
+        // the layers' plot, for the source on screen (3D draws the board's layers on its faces)
+        let f = try #require(m.plots.frame, "no plot arrived")
+        #expect(f.key == v.layers)
+        #expect(f.none.isEmpty, "the hub could not plot it: \(f.none)")
+        #expect(f.chunks.count > 10)
+        #expect(f.box.count == 4)
+        if kind == "3d" {
+            let mesh = try #require(m.plots.mesh, "no model arrived")
+            #expect(mesh.key == v.key)
+            #expect(mesh.none.isEmpty, "the hub could not make the model: \(mesh.none)")
+            #expect((mesh.mesh?.verts.count ?? 0) > 10_000)
+        } else {
+            #expect(m.plots.mesh == nil)
+        }
+    }
 }

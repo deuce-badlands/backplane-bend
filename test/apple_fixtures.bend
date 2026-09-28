@@ -23,6 +23,14 @@ def scene(+name: String, +about: String, steps: List<&2, J.Json>) -> String:
   name ++ "\t" ++ J.Json.show(J.Json.obj([J.KV{"about", J.Json.str(about)}, J.KV{"hub", J.Json.str(MH.Mock.key())},
     J.KV{"now", J.Num{Nat.show(MH.Mock.now())}}, J.KV{"steps", J.Json.arr(steps)}]))
 
+# the frames a hub sent a phone watching the sample (the viewer's own
+# captures, BackplaneTests/Fixtures/Viewer, from scripts/apple-viewer-fixtures.sh)
+def capture(+kind: String) -> J.Json:
+  J.Json.obj([J.KV{"capture", J.Json.str(kind)}])
+
+def viewer(+kind: String) -> List<&2, J.Json>:
+  [recv(MH.Mock.log.sample()), select("t7"), act("view", kind), capture(kind)]
+
 def log() -> J.Json:
   recv(MH.Mock.log(MH.Mock.machine()))
 
@@ -42,3 +50,6 @@ def main() -> IO(Unit):
     IO.print(scene("settings", "Settings on a machine set up well, after the hub answers the voice status request.", [log(), act("flag", "settings"), recv(MH.Mock.voice(True{}))]))
     IO.print(scene("settings-attention", "Settings that need you: no kicad-cli, no Backplane KiCad, no OpenAI key, and an update waiting.",
       [recv(MH.Mock.log(bare())), act("flag", "settings"), recv(MH.Mock.voice(False{})), recv(update())]))
+    IO.print(scene("viewer-board", "The board viewer on a sample board: KiCad's RoyalBlue54L Feather demo, eight layers.", viewer("board")))
+    IO.print(scene("viewer-schematic", "The schematic viewer on the sample's root sheet.", viewer("schematic")))
+    IO.print(scene("viewer-3d", "The sample board in 3D, with its parts' models.", viewer("3d")))

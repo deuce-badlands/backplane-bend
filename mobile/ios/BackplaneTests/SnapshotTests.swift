@@ -135,6 +135,30 @@ struct SnapshotTests {
         }
     }
 
+    // The board viewer on a sample board, KiCad's RoyalBlue54L Feather demo
+    // (CERN-OHL-P v2, Fixtures/Viewer/NOTICE.md): a phone shows it over the
+    // whole screen, an iPad and a Mac as a pane with the thread.
+    private func viewer(_ kind: String, testName: String = #function) async throws {
+        let m = try await model("viewer-" + kind)
+        let v = try #require(m.screen?.thread?.viewer)
+        for d in Device.here {
+            if d == .iPhone {
+                assertSnapshot(PlotScreen(model: m, viewer: v), device: d, testName: testName)
+            } else {
+                assertSnapshot(window(m), device: d, testName: testName)
+            }
+        }
+    }
+
+    @Test("the board viewer")
+    func viewerBoard() async throws { try await viewer("board") }
+
+    @Test("the schematic viewer")
+    func viewerSchematic() async throws { try await viewer("schematic") }
+
+    @Test("the 3D viewer")
+    func viewer3D() async throws { try await viewer("3d") }
+
     // (not on a Mac: there PairView asks 127.0.0.1:3787 whether a hub runs
     // on the machine, and draws whichever answer came)
     @Test("pairing")
