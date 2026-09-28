@@ -247,7 +247,7 @@ def Ex.of(+w: BT.World, +name: String, +start: Nat, local: Bool) -> Ex:
 
 def Ask.waits(+thread: String, a: M.Ask) -> Bool:
   match a:
-    case M.Ask{_, +th, _, _, _, _, +open, _}:
+    case M.Ask{_, +th, _, _, _, _, _, +open, _}:
       Bool.and(open, String.eq(th, thread))
 
 def Ask.any(xs: List<&2, M.Ask>, +thread: String) -> Bool:

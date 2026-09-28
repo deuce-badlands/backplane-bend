@@ -114,6 +114,20 @@ struct Ask: Decodable, Identifiable {
     let id, kind, head, detail: String
     let blocks: [Block]
     let buttons: [AskButton]
+    // an AskUserQuestion's questions as the agent sent them (nil otherwise)
+    let questions: [AskQuestion]?
+}
+
+struct AskQuestion: Decodable, Hashable {
+    let question: String
+    let header: String?
+    let multiSelect: Bool?
+    let options: [AskOption]?
+}
+
+struct AskOption: Decodable, Hashable {
+    let label: String
+    let description: String?
 }
 
 // a thread this one delegated to ("select" opens it)
@@ -342,13 +356,40 @@ struct SetButton: Decodable, Hashable {
     let on: Bool
 }
 
+// a text field a row types into (sent as "bfield" name, as a bot form's);
+// the row's buttons then act on what was typed
+struct SetField: Decodable, Hashable {
+    let name, text, hint: String
+    let secret: Bool
+}
+
 struct SetRow: Decodable, Hashable {
+    // the section it is under, and a heading within it ("Installed")
+    let section: String?
+    let group: String?
+    // the control: "choice" (segmented), "menu" (pop-up), "stepper",
+    // "switch", "status" (a value, toned "ok" or "warn"), "field" (typed
+    // text); anything else draws its buttons in a row
+    let kind: String?
     let label, note: String
+    let value: String?
+    let tone: String?
+    let field: SetField?
     let buttons: [SetButton]
+    // chips under the row (the dictionary's terms, each taking itself out)
+    let chips: [SetButton]?
+}
+
+// a section of Settings: its title, what is set there in a few words, and
+// whether it needs you (a dot beside it)
+struct SetSection: Decodable, Hashable {
+    let title, summary: String
+    let attention: Bool
 }
 
 struct Settings: Decodable {
     let rows: [SetRow]
+    let sections: [SetSection]?
 }
 
 // thread search ("search") or the file picker ("files"): its query and rows

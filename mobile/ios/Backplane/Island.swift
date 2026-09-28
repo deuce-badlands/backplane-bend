@@ -1,3 +1,5 @@
+// Live Activities exist only on iOS
+#if os(iOS)
 import ActivityKit
 import Foundation
 
@@ -55,3 +57,4 @@ final class IslandController {
         }
     }
 }
+#endif

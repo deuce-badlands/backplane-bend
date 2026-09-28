@@ -3,6 +3,19 @@ import SwiftUI
 struct RootView: View {
     @Bindable var model: AppModel
     @State private var pairing = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var width
+    #endif
+    // Settings lists its sections beside the chosen one in a wide window (a
+    // Mac, an iPad in regular width); a sheet reports compact width on an
+    // iPad, so the window it covers decides
+    private var wideSettings: Bool {
+        #if os(macOS)
+        true
+        #else
+        width == .regular
+        #endif
+    }
     // the delete (or remove) just answered: its dialog stays down until the screen drops it
     @State private var answered = ""
     @State private var removed = ""
@@ -11,12 +24,7 @@ struct RootView: View {
         if model.links.isEmpty {
             NavigationStack { PairView(link: "") { model.pair($0) } }
         } else if let s = model.screen {
-            NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
-                ProjectsView(model: model, screen: s, pairing: $pairing)
-                    .navigationDestination(for: String.self) { id in
-                        ThreadDestination(model: model, id: id)
-                    }
-            }
+            navigation(s)
             .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
                 Button("OK") { model.act("dismiss") }
             }
@@ -37,16 +45,17 @@ struct RootView: View {
             }
             .onChange(of: s.removing?.id) { removed = "" }
             .sheet(isPresented: Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })) {
-                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
+                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "", wide: wideSettings) }
             }
             .sheet(isPresented: Binding(get: { model.screen?.find != nil }, set: { if !$0, model.screen?.find != nil { model.act("find-close") } })) {
-                if let f = model.screen?.find { FindSheet(model: model, find: f) }
+                if let f = model.screen?.find { FindSheet(model: model, find: f).macSheet(width: 620, height: 560) }
             }
             .sheet(isPresented: $pairing) {
                 NavigationStack {
                     HubsView(model: model, screen: model.screen ?? s)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
                 }
+                .macSheet(width: 560, height: 520)
             }
         } else {
             ProgressView()
@@ -54,26 +63,162 @@ struct RootView: View {
     }
 }
 
+extension RootView {
+    // a Mac, or an iPad with the room, keeps the projects, threads and bots
+    // in a sidebar with the selected one beside it; a phone pushes
+    private var split: Bool {
+        #if os(macOS)
+        true
+        #else
+        width == .regular
+        #endif
+    }
+
+    @ViewBuilder
+    private func navigation(_ s: Screen) -> some View {
+        if split {
+        NavigationSplitView {
+            ProjectsView(model: model, screen: s, pairing: $pairing)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 400)
+        } detail: {
+            // the selection (a thread, or a bot's page) fills the column:
+            // nothing to go back to, the sidebar is the way elsewhere
+            if let id = model.path.last {
+                NavigationStack { ThreadDestination(model: model, id: id) }.id(id)
+            } else {
+                ContentUnavailableView("No thread selected", systemImage: "bubble.left.and.bubble.right",
+                                       description: Text("Pick a thread or a bot in the sidebar."))
+            }
+        }
+        .environment(\.splitLayout, true)
+        #if os(macOS)
+        .frame(minWidth: 900, minHeight: 560)
+        #endif
+        } else {
+        NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
+            ProjectsView(model: model, screen: s, pairing: $pairing)
+                .navigationDestination(for: String.self) { id in
+                    ThreadDestination(model: model, id: id)
+                }
+        }
+        }
+    }
+}
+
+// The first screen: connect to a hub. On a Mac the hub on this machine is
+// one click (loopback needs no token) once it answers; any other hub
+// pairs by the link its Settings shows.
 struct PairView: View {
     @State var link: String
     let done: (String) -> Void
+    #if os(macOS)
+    // nil while asking, then whether 127.0.0.1:3787 answered /hello
+    @State private var local: Bool?
+    private static let localURL = "http://127.0.0.1:3787/"
+    #endif
+
+    private var typed: String { link.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        Form {
-            Section {
-                TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-            } header: {
-                Text("Pairing link")
-            } footer: {
-                Text("Paste the tailnet link Backplane shows in Settings (Pairing link).")
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 10) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 34, weight: .regular))
+                        .foregroundStyle(.tint)
+                        .frame(width: 64, height: 64)
+                        .background(Color.accentColor.opacity(0.12), in: .rect(cornerRadius: 16))
+                    Text("Connect to a hub").font(.title2.bold())
+                    Text("Your threads, bots and boards live on a Backplane hub. Pair once; the app remembers it.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                }
+                #if os(macOS)
+                card {
+                    HStack(spacing: 12) {
+                        Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(.secondary).frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("This Mac").font(.headline)
+                            HStack(spacing: 6) {
+                                Circle().fill(local == true ? Color.green : local == false ? Color.orange : Color.secondary)
+                                    .frame(width: 7, height: 7)
+                                Text(local == true ? "Hub running at 127.0.0.1:3787" : local == false ? "No hub answering at 127.0.0.1:3787" : "Looking for a hub…")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 12)
+                        if local == false {
+                            Button("Retry") { Task { await probe() } }
+                        }
+                        Button("Connect") { done(Self.localURL) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(local != true)
+                            .keyboardShortcut(local == true && typed.isEmpty ? .defaultAction : nil)
+                    }
+                }
+                #endif
+                card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(anotherTitle).font(.headline)
+                        Text("Paste the pairing link from that hub's Settings (Pairing link).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .plainTextInput()
+                                .autocorrectionDisabled()
+                                .urlKeyboard()
+                                .onSubmit { if !typed.isEmpty { done(typed) } }
+                            Button("Connect") { done(typed) }
+                                .disabled(typed.isEmpty)
+                        }
+                    }
+                }
             }
-            Button("Connect") { done(link) }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
+            .frame(maxWidth: 480)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 40)
+            .frame(maxWidth: .infinity)
         }
-        .navigationTitle("Pair with a hub")
+        .navigationTitle("Backplane")
+        .inlineTitle()
+        #if os(macOS)
+        .task { await probe() }
+        .frame(minWidth: 560, minHeight: 480)
+        #endif
     }
+
+    private var anotherTitle: String {
+        #if os(macOS)
+        "Another hub"
+        #else
+        "Pair with a hub"
+        #endif
+    }
+
+    private func card<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        c()
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.secondaryBackground, in: .rect(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
+    }
+
+    #if os(macOS)
+    // GET /hello answers without a token (server.bend, Hello.answer)
+    private func probe() async {
+        local = nil
+        var r = URLRequest(url: URL(string: Self.localURL + "hello")!)
+        r.timeoutInterval = 2
+        let ok = (try? await URLSession.shared.data(for: r)).map { ($0.1 as? HTTPURLResponse)?.statusCode == 200 } ?? false
+        local = ok
+    }
+    #endif
 }
 
 // the hubs this phone is paired with (swipe to unpair), the owner's other
@@ -100,6 +245,7 @@ struct HubsView: View {
                         }
                     }
                     .swipeActions { Button("Unpair", role: .destructive) { model.unpair(h.key) } }
+                    .macMenu { Button("Unpair", role: .destructive) { model.unpair(h.key) } }
                 }
             }
             if !screen.found.isEmpty {
@@ -117,9 +263,9 @@ struct HubsView: View {
             }
             Section {
                 TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
-                    .keyboardType(.URL)
+                    .urlKeyboard()
                 Button("Add hub") { model.pair(link); link = "" }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
             } header: {
                 Text("Pair another")
@@ -127,6 +273,7 @@ struct HubsView: View {
                 Text("Paste the tailnet link Backplane shows in Settings (Pairing link).")
             }
         }
+        .formStyle(.grouped)
         .navigationTitle("Hubs")
     }
 
@@ -191,6 +338,43 @@ struct HubsPill: View {
     }
 }
 
+#if os(macOS)
+// the hubs' state along the foot of the Mac's sidebar; a click opens Hubs
+struct HubsFooter: View {
+    let model: AppModel
+    let hubs: [HubRow]
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 8) {
+                HStack(spacing: 3) {
+                    ForEach(hubs.prefix(4), id: \.key) { h in HubDot(phase: model.conn[h.key]?.phase ?? .connecting) }
+                }
+                .font(.system(size: 8))
+                Text(summary).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .frame(height: 32)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+        .help("Hubs")
+    }
+
+    private var summary: String {
+        guard let h = hubs.first else { return "No hub" }
+        let word = HubDot.word(model.conn[h.key]?.phase ?? .connecting)
+        return hubs.count == 1 ? h.name + " · " + word : "\(hubs.count) hubs · " + h.name + " " + word
+    }
+}
+#endif
+
 private struct SwipeButton: View {
     let model: AppModel
     let swipe: Swipe
@@ -249,7 +433,7 @@ private struct ThreadRow: View {
         .opacity(row.faded == true ? 0.45 : 1)
         .onTapGesture { model.navigate([row.id]) }
         .onLongPressGesture(minimumDuration: 0.4) {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Platform.haptic()
             model.act("row-menu", row.id)
         }
         .accessibilityElement(children: .combine)
@@ -260,6 +444,9 @@ private struct ThreadRow: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             ForEach(row.trail, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
+        }
+        .macMenu {
+            ForEach(row.lead + row.trail, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
         }
     }
 }
@@ -273,8 +460,19 @@ struct ProjectsView: View {
     // the row menu this dialog let go of: it stays down until the screen drops it
     @State private var shutMenu: RowMenu?
 
+    @Environment(\.splitLayout) private var split
+    // projects the sidebar has folded shut
+    @State private var folded: Set<String> = []
+
+    // a sidebar selects with the list's own selection (its rows' links
+    // cannot push into the column beside it); a phone pushes
+    private var selection: Binding<String?>? {
+        guard split else { return nil }
+        return Binding(get: { model.path.last }, set: { model.navigate($0.map { [$0] } ?? []) })
+    }
+
     var body: some View {
-        List {
+        List(selection: selection) {
             // the search is always the list's first row (projects, or in the
             // active view threads by title or project)
             if let f = screen.search {
@@ -309,6 +507,10 @@ struct ProjectsView: View {
             }
             if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }
+        .projectsListStyle(sidebar: split)
+        #if os(macOS)
+        .safeAreaInset(edge: .bottom, spacing: 0) { HubsFooter(model: model, hubs: screen.hubs) { pairing = true } }
+        #endif
         .overlay {
             if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty {
                 // a hub still catching up has not said what there is yet
@@ -324,24 +526,31 @@ struct ProjectsView: View {
         }
         .navigationTitle("Backplane")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            #if os(iOS)
+            ToolbarItem(placement: .leadingBar) {
                 HubsPill(model: model, hubs: screen.hubs) { pairing = true }
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            #endif
+            ToolbarItemGroup(placement: .trailingBar) {
                 // with several hubs, the picker opens on the one chosen
                 if screen.hubs.count > 1 {
                     Menu {
                         ForEach(screen.hubs, id: \.key) { h in Button(h.name) { model.act("picker-open", h.key + "|") } }
                     } label: { Image(systemName: "folder.badge.plus") }
+                    .menuIndicator(.hidden)
                     .accessibilityLabel("Add project")
                 } else {
                     Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("Add project")
                 }
+                // (a Mac's hubs are in the sidebar's footer)
+                #if os(iOS)
                 Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel("Hubs")
+                #endif
                 Menu {
                     Button("Search threads", systemImage: "magnifyingglass") { model.act("find-open", "search") }
                     Button("Settings", systemImage: "gear") { model.act("flag", "settings") }
                 } label: { Image(systemName: "ellipsis.circle") }
+                .menuIndicator(.hidden)
                 .accessibilityLabel("More")
             }
         }
@@ -360,13 +569,13 @@ struct ProjectsView: View {
         }
         .onChange(of: screen.rowMenu) { _, m in if m == nil { shutMenu = nil } }
         .sheet(isPresented: Binding(get: { screen.folders != nil }, set: { if !$0 { model.act("proj-close") } })) {
-            if let f = screen.folders { FoldersSheet(model: model, folders: f) }
+            if let f = screen.folders { FoldersSheet(model: model, folders: f).macSheet(width: 560, height: 520) }
         }
         .sheet(isPresented: Binding(get: { screen.newBot != nil }, set: { if !$0 { model.act("form-close", "@bnew") } })) {
-            if let f = model.screen?.newBot { NewBotSheet(model: model, form: f) }
+            if let f = model.screen?.newBot { NewBotSheet(model: model, form: f).macSheet(width: 520, height: 480) }
         }
         .sheet(isPresented: Binding(get: { screen.newRoom != nil }, set: { if !$0 { model.act("form-close", "@rnew") } })) {
-            if let f = model.screen?.newRoom { NewRoomSheet(model: model, form: f) }
+            if let f = model.screen?.newRoom { NewRoomSheet(model: model, form: f).macSheet(width: 520, height: 480) }
         }
     }
 
@@ -393,56 +602,85 @@ struct ProjectsView: View {
     }
 
     // a project: its threads, the snoozed and settled shelves, the archived
-    // one; its header (faded when quiet) takes a long press for its menu
+    // one; its header (faded when quiet) takes a long press (a right click
+    // on a Mac) for its menu. A sidebar folds a project shut by its header.
     @ViewBuilder
     private func projectSection(_ p: Project) -> some View {
-        Section {
-            ForEach(p.threads) { ThreadRow(model: model, row: $0) { choosing = $0 } }
-            if !p.snoozed.isEmpty {
-                Text(p.snoozedShelf).font(.subheadline).foregroundStyle(.secondary)
-                ForEach(p.snoozed) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+        if split {
+            Section(isExpanded: Binding(get: { !folded.contains(p.id) }, set: { if $0 { folded.remove(p.id) } else { folded.insert(p.id) } })) {
+                projectRows(p)
+            } header: {
+                projectHeader(p)
             }
-            if !p.settled.isEmpty {
-                Button { model.act("toggle-settled", p.id) } label: {
-                    HStack {
-                        Text(p.shelf).font(.subheadline)
-                        Spacer()
-                        Image(systemName: p.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }
-                .tint(.secondary)
-                if p.open { ForEach(p.settled) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
+        } else {
+            Section {
+                projectRows(p)
+            } header: {
+                projectHeader(p)
             }
-            if let arch = p.archived, !arch.isEmpty, let v = p.value {
-                Button { model.act("toggle-settled", v) } label: {
-                    HStack {
-                        Text("Archived \(arch.count)").font(.subheadline)
-                        Spacer()
-                        Image(systemName: p.archOpen == true ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }
-                .tint(.secondary)
-                if p.archOpen == true { ForEach(arch) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
-            }
-        } header: {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(p.title)
-                    Text(p.machine.isEmpty ? p.root : p.machine + ": " + p.root)
-                        .font(.caption2).textCase(nil).lineLimit(1).truncationMode(.head)
-                }
-                .opacity(p.quiet == true ? 0.5 : 1)
-                Spacer()
-                Button { model.act("new-thread", p.id) } label: { Image(systemName: "square.and.pencil") }
-                    .accessibilityLabel("New thread")
-            }
-            .contentShape(Rectangle())
-            .onLongPressGesture(minimumDuration: 0.4) {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                model.act("proj-menu", p.id)
-            }
-            .accessibilityAction(named: "Menu") { model.act("proj-menu", p.id) }
         }
+    }
+
+    @ViewBuilder
+    private func projectRows(_ p: Project) -> some View {
+        ForEach(p.threads) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+        if !p.snoozed.isEmpty {
+            Text(p.snoozedShelf).font(.subheadline).foregroundStyle(.secondary)
+            ForEach(p.snoozed) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+        }
+        if !p.settled.isEmpty {
+            Button { model.act("toggle-settled", p.id) } label: {
+                HStack {
+                    Text(p.shelf).font(.subheadline)
+                    Spacer()
+                    Image(systemName: p.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .tint(.secondary)
+            if p.open { ForEach(p.settled) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
+        }
+        if let arch = p.archived, !arch.isEmpty, let v = p.value {
+            Button { model.act("toggle-settled", v) } label: {
+                HStack {
+                    Text("Archived \(arch.count)").font(.subheadline)
+                    Spacer()
+                    Image(systemName: p.archOpen == true ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .tint(.secondary)
+            if p.archOpen == true { ForEach(arch) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
+        }
+    }
+
+    // the project's name and where it is: a phone shows the path under the
+    // name; a sidebar keeps to one line, with the path on hover
+    private func projectHeader(_ p: Project) -> some View {
+        let at = p.machine.isEmpty ? p.root : p.machine + ": " + p.root
+        return HStack {
+            VStack(alignment: .leading) {
+                Text(p.title)
+                if !split {
+                    Text(at).font(.caption2).textCase(nil).lineLimit(1).truncationMode(.head)
+                } else if !p.machine.isEmpty {
+                    Text(p.machine).font(.caption2).foregroundStyle(.secondary).textCase(nil)
+                }
+            }
+            .opacity(p.quiet == true ? 0.5 : 1)
+            Spacer()
+            Button { model.act("new-thread", p.id) } label: { Image(systemName: "square.and.pencil") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("New thread")
+        }
+        .help(at)
+        .contentShape(Rectangle())
+        .onLongPressGesture(minimumDuration: 0.4) {
+            Platform.haptic()
+            model.act("proj-menu", p.id)
+        }
+        .macMenu {
+            Button("Menu…") { model.act("proj-menu", p.id) }
+        }
+        .accessibilityAction(named: "Menu") { model.act("proj-menu", p.id) }
     }
 }
 
@@ -461,7 +699,7 @@ private struct SearchField: View {
         HStack {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField(search.hint, text: $text)
-                .textInputAutocapitalization(.never)
+                .plainTextInput()
                 .autocorrectionDisabled()
                 .submitLabel(.go)
                 .onChange(of: text) { _, t in
@@ -484,6 +722,12 @@ private struct SearchField: View {
 }
 
 // the project picker: a path field over the listed folder's rows
+// Add project, as a folder browser. The hub sends rows (Bend's picker): the
+// folder's parent ("up"), its subfolders ("dir"), adding the folder
+// ("add", or "off" when it already is a project) and, once a name is
+// typed, creating it ("new", "mkdir"). With the field empty it lists the
+// known projects instead. Here: a location bar, the folders to click into,
+// and one button that adds the folder being shown.
 private struct FoldersSheet: View {
     let model: AppModel
     let folders: Folders
@@ -491,33 +735,108 @@ private struct FoldersSheet: View {
     // what was typed here: a screen still echoing it never overwrites the field
     @State private var typed: Set<String> = []
 
+    private var browsing: Bool { folders.text.hasPrefix("~") || folders.text.hasPrefix("/") }
+    private var up: FolderRow? { folders.items.first { $0.kind == "up" } }
+    private var add: FolderRow? { browsing ? folders.items.first { $0.action == "proj-add" || $0.kind == "off" } : nil }
+    private var creates: [FolderRow] { folders.items.filter { $0.kind == "new" || $0.kind == "mkdir" } }
+    private var rows: [FolderRow] {
+        folders.items.filter { r in
+            r.kind != "up" && r.kind != "new" && r.kind != "mkdir" && r != add
+        }
+    }
+
+    // the folder the add row names, by its last component ("~" for home)
+    private var shownName: String {
+        guard let a = add else { return "" }
+        let path = a.kind == "off" ? a.label.replacingOccurrences(of: " is already a project", with: "") : a.value
+        let trimmed = path.hasSuffix("/") ? String(path.dropLast()) : path
+        return trimmed.split(separator: "/").last.map(String.init) ?? trimmed
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
+            VStack(spacing: 0) {
+                // location: back to the parent, and the path (return goes there)
+                HStack(spacing: 8) {
+                    Button { if let u = up { go(u.value) } } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless)
+                        .disabled(up == nil)
+                        .accessibilityLabel("Parent folder")
                     TextField(folders.hint, text: $text)
                         .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
+                        .textFieldStyle(.roundedBorder)
+                        .plainTextInput()
                         .autocorrectionDisabled()
+                        .onSubmit {
+                            if (text.hasPrefix("~") || text.hasPrefix("/")) && !text.hasSuffix("/") { text += "/" }
+                        }
                         .onChange(of: text) { _, t in
                             guard t != folders.text else { return }
                             typed.insert(t)
                             model.act("picker-type", t)
                         }
-                    if !folders.error.isEmpty { Text(folders.error).font(.footnote).foregroundStyle(.red) }
                 }
-                Section {
-                    ForEach(folders.items, id: \.self) { r in
+                .padding(12)
+                if !folders.error.isEmpty {
+                    Label(folders.error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.bottom, 8)
+                }
+                Divider()
+                List {
+                    ForEach(rows, id: \.self) { r in
                         Button { model.act(r.action, r.value) } label: {
-                            Label(r.label, systemImage: Self.icon(r.kind)).lineLimit(1).truncationMode(.head)
+                            HStack(spacing: 10) {
+                                Image(systemName: Self.icon(r.kind)).foregroundStyle(r.kind == "dir" ? Color.accentColor : .secondary).frame(width: 20)
+                                Text(r.label).lineLimit(1).truncationMode(.head)
+                                Spacer(minLength: 0)
+                                if r.action == "picker-type" { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+                            }
+                            .contentShape(.rect)
                         }
+                        .buttonStyle(.plain)
                         .disabled(r.action.isEmpty)
-                        .tint(r.kind == "dir" || r.kind == "up" ? .primary : .accentColor)
                     }
+                    if !creates.isEmpty {
+                        Section {
+                            ForEach(creates, id: \.self) { r in
+                                Button { model.act(r.action, r.value) } label: {
+                                    Label(r.label, systemImage: Self.icon(r.kind))
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+                .overlay {
+                    if rows.isEmpty && creates.isEmpty && folders.error.isEmpty {
+                        Text(browsing ? "No folders here" : "No projects yet").foregroundStyle(.secondary)
+                    }
+                }
+                // the one thing this sheet is for: add the folder on show
+                if browsing {
+                    Divider()
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(add?.kind == "off" ? "Already a project" : "Add this folder").font(.caption).foregroundStyle(.secondary)
+                            Text(add.map { $0.kind == "off" ? $0.label.replacingOccurrences(of: " is already a project", with: "") : $0.value } ?? text)
+                                .font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                        }
+                        Spacer(minLength: 8)
+                        Button(shownName.isEmpty ? "Add as project" : "Add \u{201C}\(shownName)\u{201D}") {
+                            if let a = add, a.kind != "off" { model.act(a.action, a.value) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(add == nil || add?.kind == "off")
+                    }
+                    .padding(12)
+                    .background(.bar)
                 }
             }
             .navigationTitle("Add project")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("proj-close") } }
             }
@@ -527,6 +846,8 @@ private struct FoldersSheet: View {
             if !typed.contains(t) { typed = []; text = t }
         }
     }
+
+    private func go(_ path: String) { model.act("picker-type", path) }
 
     static func icon(_ kind: String) -> String {
         switch kind {
@@ -559,7 +880,7 @@ struct ThreadDestination: View {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
+                .inlineTitle()
         }
     }
 
@@ -605,6 +926,13 @@ struct ThreadScreen: View {
     @State private var shown: Shown?
     // the entry that was first when earlier ones were asked for
     @State private var keepAt: String?
+    // the agent's questions wait while the person types a message instead
+    @State private var typingInstead = false
+
+    // the agent's questions take the composer's place (QuestionDock)
+    private var docked: Ask? {
+        (thread.asks ?? []).first { $0.kind == "input" && !($0.questions ?? []).isEmpty }
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -679,7 +1007,7 @@ struct ThreadScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
-            ForEach(thread.asks ?? []) { a in
+            ForEach((thread.asks ?? []).filter { $0.id != docked?.id }) { a in
                 AskCard(model: model, ask: a).padding(.horizontal).padding(.top, 8)
             }
             if let td = thread.todos {
@@ -706,88 +1034,109 @@ struct ThreadScreen: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal).padding(.top, 8)
             }
-            HStack {
-                Menu {
-                    Section("Model") {
-                        ForEach(thread.picker.models, id: \.value) { c in
-                            Button { model.act("model", c.value) } label: {
-                                if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                            }
-                        }
-                    }
-                    if !thread.picker.efforts.isEmpty {
-                        Section("Effort") {
-                            ForEach(thread.picker.efforts, id: \.value) { c in
-                                Button { model.act("effort", c.value) } label: {
-                                    if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                }
-                            }
-                        }
-                    }
-                    if let ps = thread.picker.providers, !ps.isEmpty {
-                        Section("Provider") {
-                            ForEach(ps, id: \.value) { c in
-                                Button { model.act("effort", c.value) } label: {
-                                    if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(thread.picker.label).lineLimit(1)
-                        Image(systemName: "chevron.down")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("Model and effort: " + thread.picker.label)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal).padding(.top, 8)
             ComposerExtras(model: model, thread: thread)
-            HStack(alignment: .bottom, spacing: 8) {
-                AttachButton(model: model)
-                TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
-                    .lineLimit(1...6)
-                    .focused($focused)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18))
-                // a long press sends with the other follow-up mode (queue or steer);
-                // while a turn runs with nothing typed the button stops it
-                let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let stop = thread.sendAct == "interrupt" && blank
-                Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 32))
-                    .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
-                    .onTapGesture {
-                        if stop { model.act("interrupt") } else if !blank { model.send() }
+            if let q = docked, !typingInstead {
+                QuestionDock(model: model, ask: q) { typingInstead = true }
+            } else {
+                if docked != nil {
+                    Button { typingInstead = false } label: {
+                        Label("The agent's questions are waiting", systemImage: "questionmark.bubble.fill")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color.accentColor.opacity(0.15), in: .capsule)
                     }
-                    .onLongPressGesture {
-                        if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
+                }
+                // one card: the text, then attach, the model and send along its foot
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...8)
+                        .focused($focused)
+                        .sendKeys(send: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send() } },
+                                  alt: { if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") } })
+                    HStack(spacing: 10) {
+                        AttachButton(model: model)
+                        Menu {
+                            Section("Model") {
+                                ForEach(thread.picker.models, id: \.value) { c in
+                                    Button { model.act("model", c.value) } label: {
+                                        if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                    }
+                                }
+                            }
+                            if !thread.picker.efforts.isEmpty {
+                                Section("Effort") {
+                                    ForEach(thread.picker.efforts, id: \.value) { c in
+                                        Button { model.act("effort", c.value) } label: {
+                                            if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                        }
+                                    }
+                                }
+                            }
+                            if let ps = thread.picker.providers, !ps.isEmpty {
+                                Section("Provider") {
+                                    ForEach(ps, id: \.value) { c in
+                                        Button { model.act("effort", c.value) } label: {
+                                            if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(thread.picker.label).lineLimit(1)
+                                Image(systemName: "chevron.down")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.secondary.opacity(0.12), in: .capsule)
+                        }
+                        .plainMenu()
+                        .accessibilityLabel("Model and effort: " + thread.picker.label)
+                        Spacer(minLength: 0)
+                        // a long press sends with the other follow-up mode (queue or steer);
+                        // while a turn runs with nothing typed the button stops it
+                        let blank = model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let stop = thread.sendAct == "interrupt" && blank
+                        Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 26))
+                            .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
+                            .onTapGesture {
+                                if stop { model.act("interrupt") } else if !blank { model.send() }
+                            }
+                            .onLongPressGesture {
+                                if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
+                            }
+                            .accessibilityLabel(thread.send)
+                            .accessibilityAddTraits(.isButton)
                     }
-                    .accessibilityLabel(thread.send)
-                    .accessibilityAddTraits(.isButton)
+                }
+                .padding(12)
+                // a click anywhere on the card (not only on the text's line) types
+                .background { Color.secondaryBackground.clipShape(.rect(cornerRadius: 14)).onTapGesture { focused = true } }
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
+                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
             }
-            .padding(.horizontal).padding(.vertical, 8)
           }
           .disabled(!live)
           .background(.bar)
         }
+        .onChange(of: docked?.id) { typingInstead = false }
         .navigationTitle(thread.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(isPresented: Binding(get: { !thread.viewer.open.isEmpty }, set: { if !$0 { model.act("view", "") } })) {
-            if let v = model.screen?.thread?.viewer {
-                if v.open == "renders", let p = v.mech { MechScreen(model: model, viewer: v, page: p) } else { PlotScreen(model: model, viewer: v) }
-            }
-        }
-        .fullScreenCover(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
+        .windowSubtitle(thread.branch)
+        .inlineTitle()
+        .boardViewer(model: model, open: !thread.viewer.open.isEmpty)
+        .fullScreen(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
         .sheet(isPresented: Binding(get: { thread.diff != nil }, set: { if !$0, model.screen?.thread?.diff != nil { model.act("panel") } })) {
-            if let d = model.screen?.thread?.diff { DiffSheet(model: model, diff: d) }
+            if let d = model.screen?.thread?.diff { DiffSheet(model: model, diff: d).macSheet(width: 900, height: 640) }
         }
         .sheet(isPresented: Binding(get: { thread.term != nil }, set: { if !$0, model.screen?.thread?.term != nil { model.act("term-toggle") } })) {
-            if let t = model.screen?.thread?.term { TermSheet(model: model, term: t).presentationDetents([.large]) }
+            if let t = model.screen?.thread?.term { TermSheet(model: model, term: t).presentationDetents([.large]).macTerminalSheet() }
         }
         .toolbar {
+            #if os(iOS)
             if !thread.branch.isEmpty {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
@@ -796,7 +1145,8 @@ struct ThreadScreen: View {
                     }
                 }
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            #endif
+            ToolbarItemGroup(placement: .trailingBar) {
                 if !thread.viewer.choices.isEmpty {
                     Menu {
                         ForEach(thread.viewer.choices, id: \.value) { c in
@@ -805,6 +1155,7 @@ struct ThreadScreen: View {
                     } label: {
                         Image(systemName: "cpu")
                     }
+                    .menuIndicator(.hidden)
                     .accessibilityLabel("Board viewer")
                 }
                 ForEach(thread.tools.filter { $0.action == "interrupt" }, id: \.self) { t in
@@ -834,6 +1185,7 @@ struct ThreadScreen: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .menuIndicator(.hidden)
             }
         }
     }

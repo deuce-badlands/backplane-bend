@@ -214,8 +214,8 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("TurnQueued", [J.KV{"thread", J.Str{thread}}, J.KV{"msg", J.Str{msg}}, J.KV{"text", J.Str{text}}, J.KV{"at", Codec.nat(at)}])
     case M.QueueTaken{thread, at}:
       Change.obj("QueueTaken", [J.KV{"thread", J.Str{thread}}, J.KV{"at", Codec.nat(at)}])
-    case M.AskOpened{id, thread, kind, tool, detail, options, at}:
-      Change.obj("AskOpened", [J.KV{"id", J.Str{id}}, J.KV{"thread", J.Str{thread}}, J.KV{"kind", J.Str{kind}}, J.KV{"tool", J.Str{tool}}, J.KV{"detail", J.Str{detail}}, J.KV{"options", J.Str{options}}, J.KV{"at", Codec.nat(at)}])
+    case M.AskOpened{id, thread, kind, tool, detail, options, questions, at}:
+      Change.obj("AskOpened", [J.KV{"id", J.Str{id}}, J.KV{"thread", J.Str{thread}}, J.KV{"kind", J.Str{kind}}, J.KV{"tool", J.Str{tool}}, J.KV{"detail", J.Str{detail}}, J.KV{"options", J.Str{options}}, J.KV{"questions", J.Str{questions}}, J.KV{"at", Codec.nat(at)}])
     case M.AskClosed{id, answer, at}:
       Change.obj("AskClosed", [J.KV{"id", J.Str{id}}, J.KV{"answer", J.Str{answer}}, J.KV{"at", Codec.nat(at)}])
     case M.DeviceRegistered{token, platform, kind, thread, env, bundle, at}:
@@ -333,7 +333,7 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
     case 21n:
       Some{M.QueueTaken{J.Json.get_str(o, "thread", ""), J.Json.get_nat(o, "at", 0n)}}
     case 22n:
-      Some{M.AskOpened{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "tool", ""), J.Json.get_str(o, "detail", ""), J.Json.get_str(o, "options", ""), J.Json.get_nat(o, "at", 0n)}}
+      Some{M.AskOpened{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "tool", ""), J.Json.get_str(o, "detail", ""), J.Json.get_str(o, "options", ""), J.Json.get_str(o, "questions", ""), J.Json.get_nat(o, "at", 0n)}}
     case 23n:
       Some{M.AskClosed{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "answer", ""), J.Json.get_nat(o, "at", 0n)}}
     case 24n:
@@ -465,8 +465,8 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.TurnQueued{thread, msg, text, at})
     case M.QueueTaken{thread, at}:
       Change.encode(M.QueueTaken{thread, at})
-    case M.AskOpened{id, thread, kind, tool, detail, options, at}:
-      Change.encode(M.AskOpened{id, thread, kind, tool, detail, options, at})
+    case M.AskOpened{id, thread, kind, tool, detail, options, questions, at}:
+      Change.encode(M.AskOpened{id, thread, kind, tool, detail, options, questions, at})
     case M.AskClosed{id, answer, at}:
       Change.encode(M.AskClosed{id, answer, at})
     case M.ThreadSnoozed{id, until, at}:

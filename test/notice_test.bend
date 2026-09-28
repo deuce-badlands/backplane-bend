@@ -134,7 +134,7 @@ def main() -> IO(Unit):
     C.Check.str("thread finishing alerts", hub(more(desk2(), cat([turn("tw", "9", "go", 1030n), done("tw", "9", 1040n)])), "tw"), "done turn-tw")
     C.Check.str("person in the bot's thread", hub(more(desk2(), cat([turn("tb", "3", "What's left?", 1030n), done("tb", "3", 1040n)])), "tb"), "done turn-tb")
     C.Check.str("bot asking the person", hub(more(desk2(), cat([turn("tb", "4", "[message from Pebble@backplane in #ring-requests]\nq", 1030n),
-      [M.AskOpened{"k1", "tb", "question", "AskUserQuestion", "Merge #42?", "", 1031n}], done("tb", "4", 1040n)])), "tb"), "done turn-tb")
+      [M.AskOpened{"k1", "tb", "question", "AskUserQuestion", "Merge #42?", "", "", 1031n}], done("tb", "4", 1040n)])), "tb"), "done turn-tb")
     C.Check.str("person posts again: new exchange", hub(more(desk2(), cat([[M.RoomPosted{"p9", "r1", "you", "and now?", 0n, 1050n}],
       turn("tb", "5", "[message from you in #ring-requests]\nand now?", 1050n), post("tb", "5", "Bub", "Now it is done.", 1055n), done("tb", "5", 1056n)])), "tb"), "done room-r1")
     C.Check.str("after the window: new exchange", hub(more(desk2(), cat([

@@ -45,6 +45,7 @@ struct BotCat: View {
 struct BotsSection: View {
     let model: AppModel
     let screen: Screen
+    @Environment(\.splitLayout) private var split
 
     var body: some View {
         Section {
@@ -63,7 +64,7 @@ struct BotsSection: View {
                             .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        if !split { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                     }
                 }
                 .opacity(b.mood == "away" ? 0.5 : 1)
@@ -75,7 +76,7 @@ struct BotsSection: View {
                         Text(r.name).foregroundStyle(.primary)
                         Spacer()
                         Label("\(r.members)", systemImage: "person.2").font(.caption).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        if !split { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
                     }
                 }
             }
@@ -99,6 +100,7 @@ struct BotsSection: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .plainMenu()
                 .accessibilityLabel("New bot or room")
             }
         }
@@ -131,7 +133,7 @@ struct NewBotSheet: View {
                 }
             }
             .navigationTitle("New bot")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("form-close", "@bnew") } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -167,7 +169,7 @@ struct NewRoomSheet: View {
                 }
             }
             .navigationTitle("New room")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("form-close", "@rnew") } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -256,20 +258,20 @@ struct BotScreen: View {
         switch bot.tab ?? "chat" {
         case "space":
             if let p = bot.page {
-                SpacePage(model: model, page: p).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+                SpacePage(model: model, page: p).navigationTitle(bot.name).inlineTitle()
             } else if let s = bot.space {
-                SpaceView(space: s) { model.act($0, $1) }.navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+                SpaceView(space: s) { model.act($0, $1) }.navigationTitle(bot.name).inlineTitle()
             }
         case "browser":
-            BrowserTab(model: model, browser: bot.browser).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            BrowserTab(model: model, browser: bot.browser).navigationTitle(bot.name).inlineTitle()
         case "memory":
-            MemoryTab(model: model, items: bot.memory ?? []).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            MemoryTab(model: model, items: bot.memory ?? []).navigationTitle(bot.name).inlineTitle()
         case "routines":
-            RoutinesTab(model: model, items: bot.routines ?? [], form: bot.routine).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            RoutinesTab(model: model, items: bot.routines ?? [], form: bot.routine).navigationTitle(bot.name).inlineTitle()
         case "hooks":
-            HooksTab(model: model, bot: bot).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            HooksTab(model: model, bot: bot).navigationTitle(bot.name).inlineTitle()
         case "settings":
-            if let s = bot.settings { SettingsTab(model: model, bot: bot, settings: s).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline) }
+            if let s = bot.settings { SettingsTab(model: model, bot: bot, settings: s).navigationTitle(bot.name).inlineTitle() }
         default:
             if let t = model.screen?.thread { ThreadScreen(model: model, thread: t) }
         }
@@ -280,7 +282,7 @@ struct BotScreen: View {
 private struct BrowserTab: View {
     let model: AppModel
     let browser: BotBrowser?
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
 
     private var url: URL? {
         browser.flatMap { model.hubURL($0.url, query: [URLQueryItem(name: "n", value: $0.n)]) }
@@ -289,14 +291,14 @@ private struct BrowserTab: View {
     var body: some View {
         ScrollView {
             if let image {
-                Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
+                Image(platformImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
             } else {
                 ContentUnavailableView("No page yet", systemImage: "globe")
             }
         }
         .task(id: url) {
             guard let u = url, let (d, r) = try? await URLSession.shared.data(from: u),
-                  (r as? HTTPURLResponse)?.statusCode == 200, let i = UIImage(data: d) else { return }
+                  (r as? HTTPURLResponse)?.statusCode == 200, let i = PlatformImage(data: d) else { return }
             image = i
         }
     }
@@ -322,6 +324,7 @@ private struct MemoryTab: View {
                     if !m.tags.isEmpty { Text(m.tags).font(.caption).foregroundStyle(.secondary) }
                 }
                 .swipeActions { Button("Forget", role: .destructive) { model.act("mem-forget", m.key) } }
+                .macMenu { Button("Forget", role: .destructive) { model.act("mem-forget", m.key) } }
             }
         }
         .overlay { if items.isEmpty { ContentUnavailableView("Nothing remembered", systemImage: "brain") } }
@@ -353,10 +356,14 @@ private struct RoutinesTab: View {
                     Button("Delete", role: .destructive) { model.act("routine-delete", r.id) }
                     Button("Run") { model.act("routine-run", r.id) }.tint(.indigo)
                 }
+                .macMenu {
+                    Button("Run") { model.act("routine-run", r.id) }
+                    Button("Delete", role: .destructive) { model.act("routine-delete", r.id) }
+                }
             }
         }
         .sheet(isPresented: Binding(get: { form?.open ?? false }, set: { if !$0 { model.act("form-close", "@onew") } })) {
-            if let f = model.screen?.bot?.routine { RoutineSheet(model: model, form: f) }
+            if let f = model.screen?.bot?.routine { RoutineSheet(model: model, form: f).macSheet(width: 520, height: 520) }
         }
     }
 }
@@ -375,7 +382,7 @@ private struct RoutineSheet: View {
                 Section {
                     TextField("0 9 * * 1-5", text: $cron)
                         .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
+                        .plainTextInput()
                         .autocorrectionDisabled()
                         .onChange(of: cron) { _, t in model.field("ocron", t) }
                 } header: {
@@ -390,7 +397,7 @@ private struct RoutineSheet: View {
                 }
             }
             .navigationTitle(form.id.isEmpty ? "New routine" : "Routine")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("form-close", "@onew") } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -435,6 +442,7 @@ private struct HooksTab: View {
                     }
                     .contextMenu { Button("Copy URL", systemImage: "doc.on.doc") { model.act("copy", url) } }
                     .swipeActions { Button("Revoke", role: .destructive) { model.act("hook-revoke", h.id) } }
+                    .macMenu { Button("Revoke", role: .destructive) { model.act("hook-revoke", h.id) } }
                 }
             }
         }
@@ -474,7 +482,7 @@ private struct SettingsTab: View {
                 Button(settings.google.accounts.isEmpty ? "Connect Google" : "Add account") { model.act("google", "connect") }
                 DisclosureGroup("Own client") {
                     TextField("Client ID (Desktop app)", text: $gid)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .plainTextInput().autocorrectionDisabled()
                         .onChange(of: gid) { _, t in model.field("gid", t) }
                     SecureField("Client secret", text: $gsecret)
                         .onChange(of: gsecret) { _, t in model.field("gsecret", t) }
@@ -483,7 +491,7 @@ private struct SettingsTab: View {
                 if let u = URL(string: settings.google.url), !settings.google.url.isEmpty {
                     Link("Open Google sign-in", destination: u)
                     TextField("Redirected URL", text: $gpaste)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .plainTextInput().autocorrectionDisabled()
                         .onChange(of: gpaste) { _, t in model.field("gpaste", t) }
                     Button("Finish") { model.act("google", "finish") }
                 }
@@ -497,10 +505,11 @@ private struct SettingsTab: View {
                         Text(p.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     .swipeActions { Button("Unlink", role: .destructive) { model.act("peer-revoke", p.id) } }
+                    .macMenu { Button("Unlink", role: .destructive) { model.act("peer-revoke", p.id) } }
                 }
                 HStack {
                     TextField("This hub's address", text: $purl)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .plainTextInput().autocorrectionDisabled().urlKeyboard()
                         .onChange(of: purl) { _, t in model.field("purl", t) }
                     Button("Invite") { model.act("peer-invite") }
                 }
@@ -510,7 +519,7 @@ private struct SettingsTab: View {
                 }
                 HStack {
                     TextField("Paste an invite", text: $join)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .plainTextInput().autocorrectionDisabled()
                         .onChange(of: join) { _, t in model.field("invite", t) }
                     Button("Join") { model.act("peer-join"); join = "" }
                 }
@@ -554,7 +563,7 @@ struct TalkScreen: View {
                             }
                             Text(p.text)
                                 .padding(.horizontal, 12).padding(.vertical, 8)
-                                .background(p.mine ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground), in: .rect(cornerRadius: 6))
+                                .background(p.mine ? Color.accentColor.opacity(0.15) : Color.secondaryBackground, in: .rect(cornerRadius: 6))
                                 .contextMenu { Button("Copy", systemImage: "doc.on.doc") { model.act("copy", p.text) } }
                         }
                         .frame(maxWidth: .infinity, alignment: p.mine ? .trailing : .leading)
@@ -579,7 +588,7 @@ struct TalkScreen: View {
                 TextField(bot.kind == "room" ? "Post to the room" : "Message", text: $text, axis: .vertical)
                     .lineLimit(1...6)
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
+                    .background(Color.secondaryBackground, in: .rect(cornerRadius: 8))
                     .onChange(of: text) { _, t in model.field(field, t) }
                 Button {
                     model.act(send)
@@ -594,7 +603,7 @@ struct TalkScreen: View {
             .background(.bar)
         }
         .navigationTitle(bot.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
         .toolbar {
             if bot.kind == "room" {
                 ToolbarItem(placement: .principal) {
@@ -603,7 +612,7 @@ struct TalkScreen: View {
                         Text(bot.members ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .trailingBar) {
                     Menu {
                         Button("Delete room", systemImage: "trash", role: .destructive) { model.act("room-delete", bot.id) }
                     } label: {

@@ -23,7 +23,7 @@ def log() -> List<&2, M.Change>:
    M.ThreadCreated{"f", "p2", "Wall bracket", M.Local{}, "", "", "claude", "", 999000n},
    M.TurnChanged{"a", M.Running{}, 999100n},
    M.TurnChanged{"b", M.Completed{}, 999200n},
-   M.AskOpened{"q1", "c", "input", "AskUserQuestion", "Which one?", "", 999300n},
+   M.AskOpened{"q1", "c", "input", "AskUserQuestion", "Which one?", "", "", 999300n},
    M.ThreadSettled{"d", True{}, 999000n},
    M.ThreadSettled{"e", True{}, 500n},
    M.ThreadSettled{"f", True{}, 999500n}]

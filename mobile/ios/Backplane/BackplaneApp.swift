@@ -1,4 +1,5 @@
 import SwiftUI
+#if os(iOS)
 import UIKit
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -12,13 +13,33 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         NSLog("push: %@", error.localizedDescription)
     }
 }
+#else
+import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var model: AppModel?
+
+    func application(_ app: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken token: Data) {
+        MainActor.assumeIsolated { model?.registered(token) }
+    }
+
+    func application(_ app: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NSLog("push: %@", error.localizedDescription)
+    }
+}
+#endif
 
 @main
 struct BackplaneApp: App {
+    #if os(iOS)
     @UIApplicationDelegateAdaptor private var delegate: AppDelegate
-    @Environment(\.scenePhase) private var phase
-    @State private var model = AppModel()
     @State private var grace: UIBackgroundTaskIdentifier = .invalid
+    #else
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    #endif
+    @Environment(\.scenePhase) private var phase
+    // under BackplaneTests the app is only their host: it pairs with nothing
+    @State private var model = AppModel(live: !Platform.testing)
 
     var body: some Scene {
         WindowGroup {
@@ -31,6 +52,7 @@ struct BackplaneApp: App {
         }
         .onChange(of: phase) {
             model.foreground(phase == .active)
+            #if os(iOS)
             // a little time after leaving, so a turn ending now still alerts
             if phase == .background, grace == .invalid {
                 grace = UIApplication.shared.beginBackgroundTask {
@@ -41,6 +63,17 @@ struct BackplaneApp: App {
                 UIApplication.shared.endBackgroundTask(grace)
                 grace = .invalid
             }
+            #endif
         }
+        #if os(macOS)
+        // the app menu's Settings… (cmd+comma): the settings sheet over the window
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { if model.screen?.settings == nil { model.act("flag", "settings") } }
+                    .keyboardShortcut(",", modifiers: .command)
+                    .disabled(model.screen == nil)
+            }
+        }
+        #endif
     }
 }

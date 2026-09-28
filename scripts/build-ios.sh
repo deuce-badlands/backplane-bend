@@ -1,11 +1,14 @@
 #!/bin/sh
 # Build the iOS app on a Mac over SSH (bend runs here; Xcode runs there).
-#   scripts/build-ios.sh [sim|archive]     (default sim)
+#   scripts/build-ios.sh [sim|archive|mac] (default sim)
 #   BACKPLANE_MAC=hs-mac-mini              the ssh host
 #   BACKPLANE_MAC_DIR=backplane-ios        the copy on the Mac (one per
 #                                          checkout when several build at once)
 #   sim      a Simulator build, installed and launched on a booted iPhone
 #   archive  a signed App Store archive (needs mobile/ios/signing.env there)
+#   mac      the same app built natively for this Mac (run here, not over
+#            SSH) and opened; BACKPLANE_TEAM signs it with that team, else
+#            it is signed to run locally (ad hoc, sandboxed all the same)
 set -eu
 cd "$(dirname "$0")/.."
 MAC=${BACKPLANE_MAC:-hs-mac-mini}
@@ -13,6 +16,23 @@ MODE=${1:-sim}
 DIR=${BACKPLANE_MAC_DIR:-backplane-ios}
 [ -n "${BACKPLANE_SKIP_JS:-}" ] || scripts/build-mobile.sh --js
 cp mobile/build/assets/bridge.js mobile/ios/Backplane/bridge.js
+if [ "$MODE" = mac ]; then
+  cd mobile/ios
+  if [ -n "${BACKPLANE_TEAM:-}" ]; then
+    sign="DEVELOPMENT_TEAM=$BACKPLANE_TEAM"
+  else
+    sign="CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="
+  fi
+  # shellcheck disable=SC2086
+  xcodebuild -quiet -project Backplane.xcodeproj -scheme Backplane -configuration Debug \
+    -destination 'platform=macOS,arch=arm64' -derivedDataPath build/dd-mac $sign build
+  app=build/dd-mac/Build/Products/Debug/Backplane.app
+  codesign -d --entitlements - "$app" 2>/dev/null | grep -q com.apple.security.app-sandbox \
+    || { echo "$app is not sandboxed; refusing to open it (StateStore would clear ~/Library/Application Support)"; exit 1; }
+  open "$app"
+  echo "mac: $app"
+  exit 0
+fi
 rsync -a --delete --exclude build/ --exclude authorize-mac.sh --exclude signing.env --exclude '*.p8' \
   mobile/ios/ "$MAC:$DIR/"
 ssh "$MAC" "cd $DIR && MODE=$MODE sh -s" <<'REMOTE'

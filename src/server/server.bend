@@ -4669,7 +4669,7 @@ def Hub.google.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(St
         +r2 : Chan(String) <- Chan.new(String, 1)
         Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
         IO.spawn(Unit, Gg.wait(r2, Cfg.home(cfg), Gg.tool(o), Gg.args(o), J.Json.get_obj(o, "id"), reply))
-        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", Gg.tool(o), Gg.detail(o), "", now}], Nil{}})
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", Gg.tool(o), Gg.detail(o), "", "", now}], Nil{}})
 
 def Hub.google(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match bot h:
@@ -4726,7 +4726,7 @@ def Hub.newproj.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(S
         +r2 : Chan(String) <- Chan.new(String, 1)
         Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
         IO.spawn(Unit, Np.wait(r2, inbox, thread, Gg.args(o), J.Json.get_obj(o, "id"), reply))
-        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", "project_create", BH.Bots.newproj.detail(Gg.args(o)), "", now}], Nil{}})
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", "project_create", BH.Bots.newproj.detail(Gg.args(o)), "", "", now}], Nil{}})
 
 def Hub.newproj(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match bot h:

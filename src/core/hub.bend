@@ -315,8 +315,8 @@ def Ask.find(as: List<&2, M.Ask>, +id: String) -> M.Ask:
   match as:
     case Nil{}:
       M.Ask.blank(id)
-    case M.Ask{+i, th, k, t, d, o, op, an} <> rest:
-      Bool.pick(M.Ask, String.eq(i, id), M.Ask{i, th, k, t, d, o, op, an}, Ask.find(rest, id))
+    case M.Ask{+i, th, k, t, d, o, qs, op, an} <> rest:
+      Bool.pick(M.Ask, String.eq(i, id), M.Ask{i, th, k, t, d, o, qs, op, an}, Ask.find(rest, id))
 
 def Hub.implement.k(t: M.Thread, +now: Nat) -> List<&2, M.Change>:
   match t:
@@ -1109,9 +1109,9 @@ def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: Strin
 # and asks the agent to carry it out
 def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   match a:
-    case M.Ask{_, +th, +k, _, _, _, True{}, _}:
+    case M.Ask{_, +th, +k, _, _, _, _, True{}, _}:
       Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, answer, th)
-    case M.Ask{_, _, _, _, _, _, False{}, _}:
+    case M.Ask{_, _, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 
 def Hub.answer(+s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
@@ -1939,19 +1939,19 @@ def Pend.open(as: List<&2, M.Ask>, +th: String) -> Nat:
   match as:
     case Nil{}:
       0n
-    case M.Ask{_, t, _, _, _, _, op, _} <> rest:
+    case M.Ask{_, t, _, _, _, _, _, op, _} <> rest:
       Pend.one(Bool.and(op, String.eq(t, th)), Pend.open(rest, th))
 
 def Pend.thread(a: M.Ask) -> String:
   match a:
-    case M.Ask{_, th, _, _, _, _, _, _}:
+    case M.Ask{_, th, _, _, _, _, _, _, _}:
       th
 
 def Pend.go(cs: List<&2, M.Change>, +before: M.State, +after: M.State) -> List<&2, M.Change>:
   match cs:
     case Nil{}:
       Nil{}
-    case M.AskOpened{_, +th, _, _, _, _, +at} <> t:
+    case M.AskOpened{_, +th, _, _, _, _, _, +at} <> t:
       M.PendingChanged{th, Pend.open(M.Asks.all(after), th), at} <> Pend.go(t, before, after)
     case M.AskClosed{+id, _, +at} <> t:
       M.PendingChanged{Pend.thread(Ask.find(M.Asks.all(before), id)), Pend.open(M.Asks.all(after), Pend.thread(Ask.find(M.Asks.all(before), id))), at} <> Pend.go(t, before, after)
@@ -2003,7 +2003,7 @@ def Rec.turns(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
 
 def Rec.ask.k(a: M.Ask, +s: M.State, +now: Nat) -> Step:
   match a:
-    case M.Ask{+id, +th, _, _, _, _, True{}, _}:
+    case M.Ask{+id, +th, _, _, _, _, _, True{}, _}:
       Step{[M.AskClosed{id, "", now}, Rec.note(th, now, Hub.seq(s), "Backplane restarted: this request can no longer be answered")], Nil{}}
     case _:
       Step.none()
@@ -2170,7 +2170,7 @@ def Rec.demo.base() -> List<&2, M.Change>:
   [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "codex", "", 1n}]
 
 def Rec.demo(+st: M.TurnState) -> M.State:
-  M.State.replay(List.append(&2, M.Change, Rec.demo.base(), [M.TurnChanged{"t1", st, 2n}, M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 3n}]), M.State.empty())
+  M.State.replay(List.append(&2, M.Change, Rec.demo.base(), [M.TurnChanged{"t1", st, 2n}, M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", "", 3n}]), M.State.empty())
 
 def Rec.after(+s: M.State, +now: Nat) -> M.State:
   M.State.replay(Queue.changes(Hub.recover(s, now)), s)

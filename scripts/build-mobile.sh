@@ -2,7 +2,7 @@
 # Build the phone apps' shared Bend client and the Android APK.
 #   mobile/build/assets/bridge.js   src/mobile (Bend) + bridge.js, one script
 #   dist/backplane-android.apk      when an Android SDK is found
-# The iOS app is built on a Mac: mobile/ios/build.sh (see mobile/README.md).
+# The iOS app (and its Mac build) is built on a Mac: scripts/build-ios.sh (see mobile/README.md).
 set -eu
 cd "$(dirname "$0")/.."
 out=$(bend src/mobile/app.bend --check-only 2>&1) || { echo "$out"; exit 1; }

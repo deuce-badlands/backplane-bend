@@ -93,6 +93,76 @@ multisampled; the layers on its faces keep their analytic edge.
 Debug builds also read `BACKPLANE_VIEW` (board, schematic, 3d) and
 `BACKPLANE_TAP` (x,y in points) to open the viewer and tap without hands.
 
+## On a Mac
+
+The same app builds natively for macOS 14+ on Apple silicon (not Mac
+Catalyst): one target, destinations iPhone, iPad and Mac.
+`scripts/build-ios.sh mac` builds it here (not over SSH), checks it is
+sandboxed and opens it. `BACKPLANE_TEAM=<team id>` signs it with that team;
+without one it is signed to run locally.
+
+- Pair it with a hub on the same Mac as `127.0.0.1:3787`: loopback is
+  trusted, so no token. A hub elsewhere pairs as on a phone.
+- Projects, threads and bots sit in a sidebar; the selected one fills the
+  rest of the window. The board viewer opens as a pane beside the thread,
+  resizable by its divider, with its own light or dark ground. The same
+  layout serves an iPad whenever its width is regular (a narrow iPad, as in
+  Slide Over, and every iPhone keep the pushed list and full-screen
+  viewer); under 900 pt wide the board stacks above the thread instead of
+  beside it. On the Mac the viewer reads
+  the mouse, trackpad and keys the way the desktop viewer does: a drag turns
+  the 3D model (ctrl pans, shift zooms, alt rolls; right drag pans) or moves
+  the board; a mouse wheel zooms at the pointer, forward out; two fingers
+  on a trackpad move the board (or turn the model), pinch zooms, twist
+  rolls; a click inspects, a double click fits or zooms; 1-7 are the
+  standard views, arrows turn 15 degrees (90 with shift), z / shift+z zoom,
+  f fits.
+- cmd+return sends, opt+cmd+return sends with the other follow-up mode;
+  swipe actions are also on the right-click menu; the terminal takes the
+  keyboard directly.
+- What differs lives in `mobile/ios/Backplane/Platform.swift`. The Dynamic
+  Island (Live Activities) is iOS-only, so the Mac posts its own turn-end
+  alerts while it runs behind other windows; hub push (APNs) is iOS-only
+  for now.
+- The Mac build is always sandboxed (`Backplane-macOS.entitlements`): the
+  kept state lives in the app's container, never the shared
+  `~/Library/Application Support`.
+
+## Tests
+
+The iPhone, iPad and Mac app has three layers of tests:
+
+- **Bend** (`scripts/test.sh`, with the rest of the Bend tests):
+  - `test/msettings_test.bend` checks what Settings shows against a mock hub: the sections, what each has set, what needs you, and every row's control and actions.
+  - The mock hub (`test/mockhub.bend`) builds a hub's frames from the model's own changes and the hub's codec, so it cannot drift from what a hub sends.
+- **Swift Testing** (`mobile/ios/BackplaneTests`, iOS and macOS, hosted in the app):
+  - Each scene of the mock hub (`test/apple_fixtures.bend`, written to `BackplaneTests/Fixtures` by `scripts/apple-fixtures.sh`) is replayed through the real `bridge.js`.
+  - Every answer must decode with a throwing decoder. A field renamed on either side fails with its path (`Out.decode` would drop the screen silently).
+  - Also covered: what each scene shows, through `AppModel` itself; what the app asks the hub for; the question dock's answers; the Settings layout; pairing links; and the board viewer's decoding.
+  - `scripts/test.sh` fails when a Bend change would alter the fixtures and they were not written again.
+- **Snapshots** (swift-snapshot-testing): every scene on iPhone, iPad and Mac, in `BackplaneTests/__Snapshots__/SnapshotTests`. They double as pictures of the app on every device.
+- **The board viewer** is snapshotted on a sample board: KiCad's RoyalBlue54L Feather demo (CERN-OHL-P v2; `BackplaneTests/Fixtures/Viewer/NOTICE.md`).
+  - The layout, schematic and 3D frames are captured from a real hub by `scripts/apple-viewer-fixtures.sh`. It fetches the demo at a pinned KiCad commit and runs a hub of its own (own port and home).
+  - The tests feed the captures to the app as the socket would.
+  - A Metal layer draws only on a screen, so under tests the canvas also shows its frame as a still image (`PlotRenderer.image(of:)`), which the snapshots take.
+
+```sh
+scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulator (iPhone 17 Pro)
+scripts/test-apple.sh mac                  # or one of them
+SNAPSHOT_RECORD=all scripts/test-apple.sh  # record every snapshot again, then look at them
+```
+
+Or run the Backplane scheme's tests (⌘U) in Xcode.
+
+How the snapshots are made:
+- A missing snapshot is recorded and its test fails once, so a new image is looked at before it is kept.
+- Record and compare on the same runtimes: the iOS 26.4 simulator, and macOS 26 with the Xcode 26.4 SDK. Other versions draw text a little differently.
+- The Mac tests run inside the sandboxed app, which cannot touch the source tree:
+  - they read the reference images from the test bundle;
+  - they compare them in the app's temporary directory;
+  - the scheme's test post-action copies what they recorded back into `__Snapshots__`.
+- An offscreen Mac view cannot draw a split view's Liquid Glass sidebar, so the Mac window images lay the sidebar and the detail side by side, as the split view does.
+
 ## TestFlight
 
 `archive` needs `~/backplane-ios/signing.env` on the Mac (never committed):

@@ -4146,6 +4146,12 @@ def Laws.carry_once():
 def Laws.ask_makes_pending():
   {==}
 
+def Laws.perm_answers_every_question():
+  {==}
+
+def Laws.perm_answers_text_first():
+  {==}
+
 def Laws.answer_clears_pending():
   {==}
 

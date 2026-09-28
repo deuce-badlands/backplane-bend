@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Draws the markdown blocks Md.render made (p, h3-h5, ul/li, pre, code,
-// strong, a) with native text styles.
+// Draws the markdown blocks Md.render made (p, h3-h5, ul/li, pre, table,
+// code, strong, a) with native text styles.
 
 private func inline(_ bs: [Block]) -> AttributedString {
     var out = AttributedString()
@@ -70,11 +70,43 @@ private struct BlockView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(block.plain).font(.callout.monospaced()).padding(12)
                 }
-                .background(Color(.secondarySystemBackground))
+                .background(Color.secondaryBackground)
+            case "table": TableBlock(rows: kids)
             // the web page's copy button: the message's context menu copies
             case "button": EmptyView()
             default: MarkdownView(blocks: kids)
             }
+        }
+    }
+}
+
+// A markdown table: a header row (th) in bold over a tint, the rows below
+// with hairlines between them. A table wider than the column scrolls
+// sideways rather than squeezing its cells.
+private struct TableBlock: View {
+    let rows: [Block]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 0, verticalSpacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
+                    let cells = r.kids ?? []
+                    let head = cells.first?.tag == "th"
+                    if i > 0 { Divider().gridCellUnsizedAxes(.horizontal) }
+                    GridRow {
+                        ForEach(Array(cells.enumerated()), id: \.offset) { _, c in
+                            Text(inline(c.kids ?? []))
+                                .font(head ? .callout.weight(.semibold) : .callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(minWidth: 60, maxWidth: 320, alignment: .leading)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                        }
+                    }
+                    .background(head ? Color.secondary.opacity(0.12) : Color.clear)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25)).allowsHitTesting(false))
+            .clipShape(.rect(cornerRadius: 8))
         }
     }
 }
