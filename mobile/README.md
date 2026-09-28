@@ -128,6 +128,37 @@ without one it is signed to run locally.
   kept state lives in the app's container, never the shared
   `~/Library/Application Support`.
 
+## Tests
+
+The iPhone, iPad and Mac app has three layers of tests:
+
+- **Bend** (`scripts/test.sh`, with the rest of the Bend tests):
+  - `test/msettings_test.bend` checks what Settings shows against a mock hub: the sections, what each has set, what needs you, and every row's control and actions.
+  - The mock hub (`test/mockhub.bend`) builds a hub's frames from the model's own changes and the hub's codec, so it cannot drift from what a hub sends.
+- **Swift Testing** (`mobile/ios/BackplaneTests`, iOS and macOS, hosted in the app):
+  - Each scene of the mock hub (`test/apple_fixtures.bend`, written to `BackplaneTests/Fixtures` by `scripts/apple-fixtures.sh`) is replayed through the real `bridge.js`.
+  - Every answer must decode with a throwing decoder. A field renamed on either side fails with its path (`Out.decode` would drop the screen silently).
+  - Also covered: what each scene shows, through `AppModel` itself; what the app asks the hub for; the question dock's answers; the Settings layout; pairing links; and the board viewer's decoding.
+  - `scripts/test.sh` fails when a Bend change would alter the fixtures and they were not written again.
+- **Snapshots** (swift-snapshot-testing): every scene on iPhone, iPad and Mac, in `BackplaneTests/__Snapshots__/SnapshotTests`. They double as pictures of the app on every device.
+
+```sh
+scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulator (iPhone 17 Pro)
+scripts/test-apple.sh mac                  # or one of them
+SNAPSHOT_RECORD=all scripts/test-apple.sh  # record every snapshot again, then look at them
+```
+
+Or run the Backplane scheme's tests (⌘U) in Xcode.
+
+How the snapshots are made:
+- A missing snapshot is recorded and its test fails once, so a new image is looked at before it is kept.
+- Record and compare on the same runtimes: the iOS 26.4 simulator, and macOS 26 with the Xcode 26.4 SDK. Other versions draw text a little differently.
+- The Mac tests run inside the sandboxed app, which cannot touch the source tree:
+  - they read the reference images from the test bundle;
+  - they compare them in the app's temporary directory;
+  - the scheme's test post-action copies what they recorded back into `__Snapshots__`.
+- An offscreen Mac view cannot draw a split view's Liquid Glass sidebar, so the Mac window images lay the sidebar and the detail side by side, as the split view does.
+
 ## TestFlight
 
 `archive` needs `~/backplane-ios/signing.env` on the Mac (never committed):

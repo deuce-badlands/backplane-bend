@@ -887,7 +887,8 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.status("KiCad", "KiCad CLI", U.KiCad.cli.note(nf), Bool.pick(String, U.KiCad.found(nf), "Found", "Not found"), Bool.pick(String, U.KiCad.found(nf), "ok", "warn"), Nil{}),
     Bool.pick(J.Json, U.KiCad.ipc.ready(nf),
       Mob.set.krow("KiCad", "switch", "KiCad IPC", U.KiCad.ipc.note(nf), "", "", J.Null{}, Mob.set.picks(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc", ""), Nil{}),
-      Mob.set.status("KiCad", "KiCad IPC", U.KiCad.ipc.note(nf), "Needs Backplane KiCad", "", [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})])),
+      # (its note and button say what it needs: a value beside them left the label no room)
+      Mob.set.status("KiCad", "KiCad IPC", U.KiCad.ipc.note(nf), "", "", [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})])),
     Mob.set.row("Appearance", "choice", "Theme", "The hub's windows and web page. System follows this device.", Mob.set.picks(["", "dark", "light"], theme, "ui.theme", "System")),
     Mob.set.status("Network", "Tailscale", "Listening on " ++ U.Str.get(nf, "listen"), Bool.pick(String, String.is_empty(tail), "Off", tail), "", Nil{}),
     Mob.set.status("Network", "Pairing link", U.Pair.note(U.Pair.link(nf)), "", "", Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])),

@@ -144,6 +144,8 @@ final class AppModel {
     // would be, so the screen is the one the app would show.
     func replay(hub: String, now: Int, steps: [Step]) async {
         links = ["http://" + hub]
+        // its socket as a connected hub's (no time heard: a scene has no clock)
+        conn[hub] = HubConn(phase: .online)
         let e = engine
         apply(await e.start("tests", "{}"))
         apply(await e.hubs([hub]))
