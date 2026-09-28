@@ -147,7 +147,7 @@ The iPhone, iPad and Mac app has three layers of tests:
   - A Metal layer draws only on a screen, so under tests the canvas also shows its frame as a still image (`PlotRenderer.image(of:)`), which the snapshots take.
 
 ```sh
-scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulator (iPhone 17 Pro); both run, either failing fails
+scripts/test-apple.sh                      # macOS, then the iOS 26.4 simulators (iPhone 17 Pro, iPad Pro 11-inch (M5)); all run, any failing fails
 scripts/test-apple.sh mac                  # or one of them
 SNAPSHOT_RECORD=all scripts/test-apple.sh  # record every snapshot again, then look at them
 BACKPLANE_TEST_SNAPSHOTS=0 scripts/test-apple.sh mac   # all but the snapshots, as CI does
@@ -157,7 +157,8 @@ Or run the Backplane scheme's tests (⌘U) in Xcode.
 
 How the snapshots are made:
 - A missing snapshot is recorded and its test fails once, so a new image is looked at before it is kept.
-- Record and compare on the same runtimes: the iOS 26.4 simulator, and macOS 26 with the Xcode 26.4 SDK. Other versions draw text a little differently.
+- Record and compare on the same runtimes: the iOS 26.4 simulators, and macOS 26 with the Xcode 26.4 SDK. Other versions draw text a little differently.
+- Each device is drawn by its own simulator, one after the other: the iPhone's images by an iPhone, the iPad's by an iPad (in an iPhone's window an iPad takes the iPhone's safe area). Animations are held still: layers at speed 0, and a cat at its first pose.
 - The Mac tests run inside the sandboxed app, which cannot touch the source tree:
   - they read the reference images from the test bundle;
   - they compare them in the app's temporary directory;
