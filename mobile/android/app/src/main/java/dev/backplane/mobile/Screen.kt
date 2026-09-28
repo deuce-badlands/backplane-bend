@@ -99,9 +99,19 @@ data class TermCursor(val x: Int, val y: Int, val on: Boolean)
 data class Term(val title: String, val fg: Int, val bg: Int, val lines: List<List<TermRun>>, val cursor: TermCursor)
 
 // settings: rows of a label, a note and buttons (each sends action with value)
-data class SetButton(val label: String, val action: String, val value: String, val on: Boolean)
-data class SetRow(val label: String, val note: String, val buttons: List<SetButton>)
-data class Settings(val rows: List<SetRow>)
+// Settings (src/mobile/screen.bend Mob.settings): rows under sections, each
+// naming its control. A button may act on the row's field (needs: it waits
+// for text), undo something (danger: asked first, in confirm's words), or
+// be a switch's on (yes).
+data class SetButton(val label: String, val action: String, val value: String, val on: Boolean,
+                     val needs: Boolean = false, val danger: Boolean = false, val yes: Boolean = false, val confirm: String = "")
+// a field typed in; a secret's text never goes to the hub but with its button
+data class SetField(val name: String, val text: String, val hint: String, val secret: Boolean)
+// kind: choice, menu, stepper, switch, status (value toned ok or warn), field
+data class SetRow(val section: String, val group: String, val kind: String, val label: String, val note: String,
+                  val value: String, val tone: String, val field: SetField?, val buttons: List<SetButton>, val chips: List<SetButton>)
+data class SetSection(val title: String, val icon: String, val summary: String, val attention: Boolean)
+data class Settings(val rows: List<SetRow>, val sections: List<SetSection>)
 
 // thread search ("search") or the file picker ("files"): its query and rows
 data class Find(val mode: String, val query: String, val rows: List<FolderRow>)
@@ -484,10 +494,14 @@ fun parseScreen(o: JSONObject) = Screen(
     },
     o.optJSONObject("bot")?.let(::botView),
     o.optJSONObject("settings")?.let { st ->
+        fun button(b: JSONObject) = SetButton(b.optString("label"), b.optString("action"), b.optString("value"), b.optBoolean("on"),
+            b.optBoolean("needs"), b.optBoolean("danger"), b.optBoolean("yes"), b.optString("confirm"))
         Settings(st.optJSONArray("rows").map { r ->
-            SetRow(r.optString("label"), r.optString("note"),
-                r.optJSONArray("buttons").map { SetButton(it.optString("label"), it.optString("action"), it.optString("value"), it.optBoolean("on")) })
-        })
+            SetRow(r.optString("section"), r.optString("group"), r.optString("kind"), r.optString("label"), r.optString("note"),
+                r.optString("value"), r.optString("tone"),
+                r.optJSONObject("field")?.let { SetField(it.optString("name"), it.optString("text"), it.optString("hint"), it.optBoolean("secret")) },
+                r.optJSONArray("buttons").map(::button), r.optJSONArray("chips").map(::button))
+        }, st.optJSONArray("sections").map { SetSection(it.optString("title"), it.optString("icon"), it.optString("summary"), it.optBoolean("attention")) })
     },
     o.optJSONObject("find")?.let { Find(it.optString("mode"), it.optString("query"), folderRows(it.optJSONArray("rows"))) },
     o.optJSONObject("removing")?.let {

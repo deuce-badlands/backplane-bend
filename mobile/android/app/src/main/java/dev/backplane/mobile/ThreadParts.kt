@@ -730,18 +730,20 @@ fun FindSheet(m: AppModel, f: Find) {
 fun SettingsSheet(m: AppModel, st: Settings) {
     Sheet("Settings", { m.act("flag", "settings") }, closeLabel = "Done") { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
-            items(st.rows) { r ->
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(r.label, style = MaterialTheme.typography.bodyLarge)
-                    if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    if (r.buttons.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (b in r.buttons) {
-                            if (b.on) Button(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
-                            else OutlinedButton(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
+            for (sec in settingsSections(st)) {
+                item(key = "head:" + sec.title) { SettingsHead(sec) }
+                val rows = st.rows.filter { it.section == sec.title }
+                rows.forEachIndexed { i, r ->
+                    item(key = sec.title + ":" + r.label) {
+                        // a heading within the section ("Installed") before its first row
+                        if (r.group.isNotEmpty() && (i == 0 || rows[i - 1].group != r.group)) {
+                            Text(r.group, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(start = 16.dp, top = 8.dp))
                         }
+                        SettingRow(m, r)
+                        HorizontalDivider()
                     }
                 }
-                HorizontalDivider()
             }
         }
     }

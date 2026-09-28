@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -73,6 +75,24 @@ private fun MdBlock(b: Block) {
                 Text(plain(b.kids), style = t.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     softWrap = false,
                     modifier = Modifier.horizontalScroll(rememberScrollState()).padding(12.dp))
+            }
+            // a table (Md.table): the header's cells bold over a rule, each
+            // column as wide as its widest cell, sideways when wider
+            "table" -> {
+                val rows = b.kids.filterIsInstance<Block.El>().map { tr -> tr.kids.filterIsInstance<Block.El>() }
+                val n = rows.maxOfOrNull { it.size } ?: 0
+                val widths = (0 until n).map { i -> rows.maxOf { r -> r.getOrNull(i)?.let { plain(it.kids).length } ?: 0 } }
+                Column(Modifier.horizontalScroll(rememberScrollState())) {
+                    rows.forEachIndexed { ri, r ->
+                        Row {
+                            r.forEachIndexed { i, c ->
+                                Text(inline(c.kids), style = if (c.tag == "th") t.bodyMedium.copy(fontWeight = FontWeight.SemiBold) else t.bodyMedium,
+                                    modifier = Modifier.width((widths[i].coerceIn(3, 40) * 8 + 16).dp).padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                        }
+                        if (ri == 0 && r.any { it.tag == "th" }) HorizontalDivider()
+                    }
+                }
             }
             // the web page's copy button: long-press the message instead
             "button" -> Unit
