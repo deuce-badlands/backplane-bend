@@ -1,4 +1,4 @@
-import UIKit
+import Foundation
 import UserNotifications
 
 // Turn-end alerts. While the app is in front it posts the alerts Bend
@@ -13,7 +13,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let c = UNUserNotificationCenter.current()
         c.delegate = self
         c.requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
-            if ok { DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() } }
+            if ok { DispatchQueue.main.async { Platform.registerForRemoteNotifications() } }
         }
     }
 

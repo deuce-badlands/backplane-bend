@@ -30,6 +30,24 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: scripts/test.sh
 
+  apple:
+    name: Apple app tests (macOS)
+    # the Mac destination of mobile/ios: Swift Testing over the mock hub's
+    # scenes (decoding, content, the requests each control sends, settings
+    # layout, pairing, plots). The snapshot suite is skipped: its references
+    # are not checked in (scripts/test-apple.sh)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bend
+      - name: Xcode 26.4
+        # the SDK the app and its tests are written against
+        run: sudo xcode-select -s /Applications/Xcode_26.4.1.app && xcodebuild -version
+      - run: scripts/test-apple.sh mac
+        env:
+          BACKPLANE_TEST_SNAPSHOTS: "0"
+
   build:
     name: Build ${{ matrix.target }}
     needs: [laws]

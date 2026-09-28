@@ -1738,8 +1738,8 @@ def Asks.open.go(as: List<&2, M.Ask>, +thread: String) -> List<&2, M.Ask>:
   match as:
     case Nil{}:
       Nil{}
-    case M.Ask{i, +th, k, t, d, o, +op, an} <> rest:
-      Asks.open.k(Bool.and(op, String.eq(th, thread)), M.Ask{i, th, k, t, d, o, op, an}, Asks.open.go(rest, thread))
+    case M.Ask{i, +th, k, t, d, o, qs, +op, an} <> rest:
+      Asks.open.k(Bool.and(op, String.eq(th, thread)), M.Ask{i, th, k, t, d, o, qs, op, an}, Asks.open.go(rest, thread))
 
 # what a thread's agent waits on the user for
 def Asks.open(s: M.State, +thread: String) -> List<&2, M.Ask>:
@@ -2087,7 +2087,7 @@ def Asks.kind(as: List<&2, M.Ask>, +k: String) -> Bool:
   match as:
     case Nil{}:
       False{}
-    case M.Ask{_, _, +x, _, _, _, _, _} <> t:
+    case M.Ask{_, _, +x, _, _, _, _, _, _} <> t:
       Bool.or(String.eq(x, k), Asks.kind(t, k))
 
 # what a thread's dot shows (M.Status.of has the order)
@@ -4398,8 +4398,10 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
       Voice.toggle(Voice.on(u), u)
+    # the key: the action's value (a phone's field, which never leaves the
+    # phone but with this), else the field typed here
     case 1n:
-      Voice.rpc(Ui.scratch_set(u, "@f.vkey", ""), "key", [J.KV{"key", J.Str{Ui.scratch(u, "@f.vkey")}}])
+      Voice.rpc(Ui.scratch_set(u, "@f.vkey", ""), "key", [J.KV{"key", J.Str{Bool.pick(String, String.is_empty(value), Ui.scratch(u, "@f.vkey"), value)}}])
     case 2n:
       Voice.rpc(u, "unkey", Nil{})
     case 3n:

@@ -116,10 +116,9 @@ struct Lightbox: View {
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
-                ToolbarItem(placement: .topBarLeading) { ShareLink(item: shown.url) }
+                ToolbarItem(placement: .leadingBar) { ShareLink(item: shown.url) }
             }
-            .toolbarBackground(.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .barStyle(.black, scheme: .dark)
         }
     }
 }
@@ -223,7 +222,7 @@ struct TasksView: View {
             }
         }
         .padding(10)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+        .background(Color.secondaryBackground, in: .rect(cornerRadius: 10))
     }
 }
 
@@ -293,7 +292,7 @@ struct ComposerExtras: View {
                 ScrollView { Text(b.a).font(.callout).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 200)
             }
             .padding(10)
-            .background(Color(.secondarySystemBackground))
+            .background(Color.secondaryBackground)
             .padding(.horizontal).padding(.top, 8)
         }
         if !skills.isEmpty {
@@ -355,8 +354,11 @@ struct AttachButton: View {
             Button("Photos", systemImage: "photo.on.rectangle") { picking = true }
             Button("Files", systemImage: "folder") { importing = true }
         } label: {
-            Image(systemName: "paperclip").font(.system(size: 20)).padding(.bottom, 6)
+            Image(systemName: "paperclip").font(.system(size: Platform.attachSize)).foregroundStyle(.secondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
+        .plainMenu()
         .accessibilityLabel("Attach")
         .photosPicker(isPresented: $picking, selection: $photos, maxSelectionCount: 10, matching: .images)
         .onChange(of: photos) { _, items in
@@ -367,7 +369,7 @@ struct AttachButton: View {
                     guard let data = try? await it.loadTransferable(type: Data.self) else { continue }
                     let ext = it.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
                     // HEIC becomes JPEG, which every agent reads
-                    if ext == "heic", let img = UIImage(data: data), let jpg = img.jpegData(compressionQuality: 0.85) {
+                    if ext == "heic", let jpg = Platform.jpeg(data, quality: 0.85) {
                         model.attach(jpg, name: "photo-\(i + 1).jpg")
                     } else {
                         model.attach(data, name: "photo-\(i + 1).\(ext)")
@@ -412,7 +414,7 @@ struct DiffSheet: View {
             .listStyle(.plain)
             .environment(\.defaultMinListRowHeight, 14)
             .navigationTitle("Diff")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { model.act("panel") } }
                 ToolbarItem(placement: .primaryAction) {
@@ -458,14 +460,14 @@ struct TermSheet: View {
     @State private var buf = " "
     @FocusState private var typing: Bool
 
-    static let font = UIFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    static let cw = ("M" as NSString).size(withAttributes: [.font: font]).width
-    static let lh = ceil(font.lineHeight)
+    static let metrics = Platform.monoFont(size: 11)
+    static let cw = metrics.width
+    static let lh = ceil(metrics.line)
 
     // the size a terminal has room for on this phone, as "<cols>x<rows>"
     static func size() -> String {
-        let b = UIScreen.main.bounds
-        return "\(max(Int((b.width - 16) / cw), 20))x\(max(Int((b.height * 0.5) / lh), 8))"
+        let b = Platform.terminalArea
+        return "\(max(Int((b.width - 16) / cw), 20))x\(max(Int(b.height / lh), 8))"
     }
 
     private static func color(_ c: UInt32) -> Color {
@@ -486,6 +488,23 @@ struct TermSheet: View {
     }
 
     private func key(_ k: String, _ mods: Int = 0) { model.act("term-key", "\(k)\t\(mods)") }
+
+    // a Mac keyboard straight to the pty: named keys by name, ctrl+letter as
+    // a key with ctrl held (4), anything else typed as text
+    private func press(_ p: KeyPress) -> KeyPress.Result {
+        let named: [KeyEquivalent: String] = [.return: "Enter", .delete: "Backspace", .escape: "Escape", .tab: "Tab",
+                                              .leftArrow: "ArrowLeft", .rightArrow: "ArrowRight", .upArrow: "ArrowUp", .downArrow: "ArrowDown",
+                                              .home: "Home", .end: "End", .pageUp: "PageUp", .pageDown: "PageDown", .deleteForward: "Delete"]
+        if let n = named[p.key] { key(n); return .handled }
+        if p.modifiers.contains(.command) { return .ignored }
+        if p.modifiers.contains(.control), let c = p.key.character.lowercased().first, c.isLetter {
+            key(String(c), 4)
+            return .handled
+        }
+        guard !p.characters.isEmpty else { return .ignored }
+        model.act("term-paste", p.characters)
+        return .handled
+    }
 
     var body: some View {
         NavigationStack {
@@ -510,11 +529,13 @@ struct TermSheet: View {
                 .defaultScrollAnchor(.bottomLeading)
                 .background(Self.color(term.bg))
                 .onTapGesture { typing = true }
+                .terminalKeys($typing, { press($0) }, paste: { model.act("term-paste", $0) })
+                #if os(iOS)
                 TextField("", text: $buf)
                     .focused($typing)
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
-                    .keyboardType(.asciiCapable)
+                    .asciiKeyboard()
                     .frame(width: 1, height: 1)
                     .opacity(0.01)
                     .onChange(of: buf) { old, new in
@@ -529,6 +550,7 @@ struct TermSheet: View {
                         if buf != " " { buf = " " }
                     }
                     .onSubmit { key("Enter"); typing = true }
+                #endif
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         Button("esc") { key("Escape") }
@@ -550,12 +572,10 @@ struct TermSheet: View {
                 .background(.bar)
             }
             .navigationTitle(term.title.isEmpty ? "Terminal" : term.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Self.color(term.bg), for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .inlineTitle()
+            .barStyle(Self.color(term.bg), scheme: .dark)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { model.act("term-toggle") } }
+                ToolbarItem(placement: .closeBar) { Button("Close") { model.act("term-toggle") } }
             }
             .onAppear { typing = true }
         }
@@ -592,17 +612,17 @@ struct FindSheet: View {
             }
             .safeAreaInset(edge: .top) {
                 TextField(find.mode == "files" ? "File name" : "Titles and messages", text: $text)
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
                     .focused($focused)
                     .padding(10)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+                    .background(Color.secondaryBackground, in: .rect(cornerRadius: 10))
                     .padding(.horizontal).padding(.vertical, 8)
                     .background(.bar)
                     .onChange(of: text) { _, t in model.act("find-q", t) }
             }
             .navigationTitle(find.mode == "files" ? "Find file" : "Search threads")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("find-close") } }
             }
@@ -612,42 +632,451 @@ struct FindSheet: View {
 }
 
 // the hub's settings, as the desktop has them
+// The hub's settings as a sheet (on a Mac also from the app menu's
+// Settings…, cmd+comma). A wide sheet (a Mac, an iPad) lists the sections
+// beside the chosen one, like System Settings; a phone lists them with
+// what each has set, and pushes into one.
 struct SettingsSheet: View {
     let model: AppModel
     let settings: Settings
     let version: String
+    // sections beside the chosen one (a Mac, an iPad), or a list that pushes
+    let wide: Bool
+    @AppStorage("settings.section", store: Platform.defaults) private var picked = ""
+    // a row's field is being typed in: return is its own, not Done's
+    @State private var typing = false
+
+    private var sections: [SetSection] { Self.sections(of: settings) }
+
+    // the hub's sections, or (from a hub that sends none) the rows' own, in order
+    static func sections(of settings: Settings) -> [SetSection] {
+        if let s = settings.sections, !s.isEmpty { return s }
+        var seen: [String] = []
+        for r in settings.rows where !seen.contains(r.section ?? "") { seen.append(r.section ?? "") }
+        return seen.map { SetSection(title: $0, summary: "", attention: false) }
+    }
+
+    static func rows(of settings: Settings, in title: String) -> [SetRow] {
+        settings.rows.filter { ($0.section ?? "") == title }
+    }
+
+    private var current: SetSection? { sections.first { $0.title == picked } ?? sections.first }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                ForEach(settings.rows, id: \.self) { r in
-                    Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(r.label)
-                            if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }
-                            if !r.buttons.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(r.buttons, id: \.self) { b in
-                                            if b.on {
-                                                Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.borderedProminent)
-                                            } else {
-                                                Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.bordered)
-                                            }
-                                        }
-                                    }
-                                }
+        // the rows lay their controls out by the same width
+        Group { if wide { split } else { stack } }
+            .environment(\.splitLayout, wide)
+            .environment(\.settingsTyping, $typing)
+    }
+
+    private var split: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                List(selection: Binding(get: { current?.title }, set: { if let t = $0 { picked = t } })) {
+                    ForEach(sections, id: \.title) { s in
+                        HStack(spacing: 8) {
+                            SectionIcon(icon: s.icon ?? "")
+                            Text(s.title)
+                            Spacer(minLength: 4)
+                            // a mark by shape, not colour alone
+                            if s.attention {
+                                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).font(.caption)
+                                    .accessibilityLabel("Needs attention")
                             }
                         }
-                        .padding(.vertical, 4)
+                        .tag(s.title)
                     }
+                }
+                .listStyle(.sidebar)
+                .safeAreaInset(edge: .bottom) {
+                    if !version.isEmpty { Text("Backplane \(version)").font(.caption).foregroundStyle(.secondary).padding(10) }
+                }
+                .frame(width: Platform.settingsSidebar)
+                Divider()
+                if let c = current {
+                    SettingsPane(model: model, section: c, rows: Self.rows(of: settings, in: c.title), header: true)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            Divider()
+            HStack {
+                #if os(macOS)
+                Text("⌘1–\(min(9, sections.count)) switch sections").font(.caption).foregroundStyle(.secondary)
+                #endif
+                Spacer()
+                Button("Done") { model.act("flag", "settings") }
+                    .keyboardShortcut(typing ? nil : .defaultAction)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        // cmd+1…9 picks a section
+        .onKeyPress(phases: .down) { k in
+            guard k.modifiers.contains(.command), let n = k.characters.first?.wholeNumberValue, n >= 1, n <= min(9, sections.count) else { return .ignored }
+            picked = sections[n - 1].title
+            return .handled
+        }
+        .macSheet(width: 700, height: 520)
+        .pageSheet()
+    }
+
+    private var stack: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(sections, id: \.title) { s in
+                        NavigationLink(value: s.title) {
+                            HStack(spacing: 10) {
+                                SectionIcon(icon: s.icon ?? "")
+                                Text(s.title)
+                                Spacer(minLength: 8)
+                                if s.attention {
+                                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).font(.caption)
+                                        .accessibilityLabel("Needs attention")
+                                }
+                                Text(s.summary).font(.subheadline).lineLimit(1)
+                                    .foregroundStyle(s.attention ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                            }
+                        }
+                    }
+                } footer: {
+                    if !version.isEmpty { Text("Backplane \(version)") }
                 }
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
+            .navigationDestination(for: String.self) { t in
+                if let s = sections.first(where: { $0.title == t }) {
+                    SettingsPane(model: model, section: s, rows: Self.rows(of: settings, in: t), header: false)
+                        .navigationTitle(t)
+                        .inlineTitle()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
             }
         }
+    }
+}
+
+// a section's icon: a tinted rounded square, as System Settings draws them
+// (the hub names it; a name this app does not know draws a gear)
+private struct SectionIcon: View {
+    let icon: String
+
+    private var look: (String, Color) {
+        switch icon {
+        case "threads": ("text.bubble.fill", .gray)
+        case "agents": ("cpu.fill", .indigo)
+        case "writing": ("pencil.line", .orange)
+        case "cad": ("memorychip.fill", .teal)
+        case "appearance": ("circle.lefthalf.filled", Color(white: 0.4))
+        case "network": ("network", .blue)
+        case "voice": ("mic.fill", .pink)
+        default: ("gearshape.fill", .gray)
+        }
+    }
+
+    var body: some View {
+        Image(systemName: look.0)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(look.1.gradient, in: .rect(cornerRadius: 6))
+    }
+}
+
+// one section's rows, under their headings ("Installed")
+struct SettingsPane: View {
+    let model: AppModel
+    let section: SetSection
+    let rows: [SetRow]
+    let header: Bool
+
+    private var groups: [(title: String, rows: [SetRow])] { Self.groups(rows) }
+
+    // consecutive rows under one heading, in order
+    static func groups(_ rows: [SetRow]) -> [(title: String, rows: [SetRow])] {
+        var out: [(title: String, rows: [SetRow])] = []
+        for r in rows {
+            let t = r.group ?? ""
+            if let last = out.last, last.title == t { out[out.count - 1].rows.append(r) } else { out.append((t, [r])) }
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if header {
+                HStack(spacing: 10) {
+                    SectionIcon(icon: section.icon ?? "")
+                    Text(section.title).font(.title3.weight(.semibold))
+                }
+                .padding(.horizontal, 20).padding(.top, 16)
+            }
+            Form {
+                ForEach(groups, id: \.title) { g in
+                    Section {
+                        ForEach(g.rows, id: \.label) { SettingRowView(model: model, row: $0) }
+                    } header: {
+                        if !g.title.isEmpty { Text(g.title) }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+        }
+    }
+}
+
+// one setting: its label and note, and the control its kind names
+private struct SettingRowView: View {
+    let model: AppModel
+    let row: SetRow
+    // the field's text; a secret's never leaves this view but with its
+    // button (the hub never sends it back), anything else goes to the hub
+    // as it is typed, and what was typed here is never overwritten by a
+    // screen still echoing it
+    @State private var text = ""
+    @State private var typed: Set<String> = []
+    // an undoing button waiting for its confirmation
+    @State private var asking: SetButton?
+    @FocusState private var editing: Bool
+    @Environment(\.splitLayout) private var wide
+    @Environment(\.settingsTyping) private var typing
+
+    private var kind: String { row.kind ?? "" }
+
+    // a field (and its buttons) goes under its label, where it has the
+    // width; a phone puts its other wide controls (segments) there too
+    private var below: Bool {
+        if kind == "field" { return true }
+        #if os(macOS)
+        return false
+        #else
+        return !wide && (kind == "choice" || (kind == "status" && !row.buttons.isEmpty) || kind == "")
+        #endif
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if below {
+                label
+                control
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    label.frame(maxWidth: .infinity, alignment: .leading)
+                    control.fixedSize()
+                }
+            }
+            if let cs = row.chips, !cs.isEmpty {
+                ChipFlow(spacing: 6) {
+                    ForEach(cs, id: \.self) { c in
+                        Button { model.act(c.action, c.value) } label: {
+                            HStack(spacing: 4) { Text(c.label); Image(systemName: "xmark").font(.caption2.weight(.bold)) }
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Remove \(c.label)")
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 2)
+        .onAppear { text = row.field?.text ?? "" }
+        // the hub clears a field once it has taken it (an added term)
+        .onChange(of: row.field?.text) { _, t in
+            let t = t ?? ""
+            if !typed.contains(t) { text = t }
+            typed = []
+        }
+        .onChange(of: editing) { _, e in typing.wrappedValue = e }
+        .confirmationDialog(asking?.confirm ?? "", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
+                            titleVisibility: .visible, presenting: asking) { b in
+            Button(b.label, role: .destructive) { send(b) }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var label: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(row.label)
+            if !row.note.isEmpty {
+                Text(row.note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+        }
+    }
+
+    private var chosen: Int? { row.buttons.firstIndex { $0.on } }
+
+    @ViewBuilder private var control: some View {
+        switch kind {
+        case "choice":
+            Picker(row.label, selection: Binding(get: { chosen ?? -1 }, set: { if $0 >= 0, $0 < row.buttons.count { press(row.buttons[$0]) } })) {
+                ForEach(Array(row.buttons.enumerated()), id: \.offset) { i, b in Text(b.label).tag(i) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        case "menu":
+            Picker(row.label, selection: Binding(get: { chosen ?? -1 }, set: { if $0 >= 0, $0 < row.buttons.count { press(row.buttons[$0]) } })) {
+                ForEach(Array(row.buttons.enumerated()), id: \.offset) { i, b in Text(b.label).tag(i) }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+        case "stepper":
+            HStack(spacing: 8) {
+                Text(row.value ?? "").monospacedDigit()
+                if row.buttons.count == 2 {
+                    Stepper(row.label, onIncrement: { press(row.buttons[1]) }, onDecrement: { press(row.buttons[0]) }).labelsHidden()
+                }
+            }
+        case "switch":
+            Toggle(row.label, isOn: Binding(get: { row.buttons.first { $0.yes == true }?.on ?? false }, set: { on in
+                if let b = row.buttons.first(where: { ($0.yes == true) == on }) { press(b) }
+            }))
+            .toggleStyle(.switch)
+            .labelsHidden()
+        case "status":
+            HStack(spacing: 8) {
+                if let v = row.value, !v.isEmpty {
+                    Text(v).foregroundStyle(tone).lineLimit(1)
+                }
+                buttons
+            }
+        case "field":
+            HStack(spacing: 8) {
+                if let f = row.field { field(f) }
+                buttons
+            }
+        default:
+            ChipFlow(spacing: 6) { buttons }.controlSize(.small)
+        }
+    }
+
+    private var tone: AnyShapeStyle {
+        switch row.tone {
+        case "ok": AnyShapeStyle(.green)
+        case "warn": AnyShapeStyle(.orange)
+        default: AnyShapeStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var buttons: some View {
+        ForEach(row.buttons, id: \.self) { b in
+            let idle = b.needs == true && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if b.danger == true {
+                Button(b.label, role: .destructive) { press(b) }.buttonStyle(.bordered)
+            } else if b.on {
+                Button(b.label) { press(b) }.buttonStyle(.borderedProminent).disabled(idle)
+            } else {
+                Button(b.label) { press(b) }.buttonStyle(.bordered).disabled(idle)
+            }
+        }
+    }
+
+    @ViewBuilder private func field(_ f: SetField) -> some View {
+        Group {
+            if f.secret {
+                SecureField("", text: $text, prompt: Text(f.hint))
+            } else {
+                TextField("", text: $text, prompt: Text(f.hint))
+            }
+        }
+        // the hint is the prompt inside the field, not a label beside it
+        .labelsHidden()
+        .plainTextInput()
+        .autocorrectionDisabled()
+        .macFieldStyle()
+        .frame(minWidth: 160, idealWidth: 220, maxWidth: below ? .infinity : 240)
+        .focused($editing)
+        .onChange(of: text) { _, t in
+            guard !f.secret, t != row.field?.text else { return }
+            typed.insert(t)
+            model.field(f.name, t)
+        }
+        // return does the row's button that takes the text (Save, Add)
+        .onSubmit { if let b = row.buttons.first(where: { $0.needs == true }) { press(b) } }
+    }
+
+    private func press(_ b: SetButton) {
+        if b.danger == true, b.confirm != nil { asking = b; return }
+        send(b)
+    }
+
+    // a secret goes with its button, as the action's value, and is then
+    // forgotten here; any other field's text reaches the hub before the
+    // action that reads it
+    private func send(_ b: SetButton) {
+        guard let f = row.field else { model.act(b.action, b.value); return }
+        if f.secret {
+            if b.needs == true {
+                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !t.isEmpty else { return }
+                text = ""
+                model.act(b.action, t)
+            } else {
+                model.act(b.action, b.value)
+            }
+        } else if b.needs == true {
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            model.submit(f.name, text, b.action, b.value)
+        } else {
+            model.act(b.action, b.value)
+        }
+    }
+}
+
+// whether a Settings row's field is being typed in (return is then the
+// field's, not the sheet's Done)
+private struct SettingsTypingKey: EnvironmentKey {
+    static let defaultValue: Binding<Bool> = .constant(false)
+}
+
+extension EnvironmentValues {
+    var settingsTyping: Binding<Bool> {
+        get { self[SettingsTypingKey.self] }
+        set { self[SettingsTypingKey.self] = newValue }
+    }
+}
+
+// buttons laid out in rows, wrapping at the width they have (a Mac's list
+// of microphones, a long dictionary)
+private struct ChipFlow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(proposal.width ?? .infinity, subviews)
+        let w = rows.map { $0.width }.max() ?? 0
+        let h = rows.map { $0.height }.reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: w, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for r in arrange(bounds.width, subviews) {
+            var x = bounds.minX
+            for i in r.items {
+                let sz = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(sz))
+                x += sz.width + spacing
+            }
+            y += r.height + spacing
+        }
+    }
+
+    private struct Row { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for i in subviews.indices {
+            let sz = subviews[i].sizeThatFits(.unspecified)
+            let add = rows[rows.count - 1].items.isEmpty ? sz.width : rows[rows.count - 1].width + spacing + sz.width
+            if add > width, !rows[rows.count - 1].items.isEmpty {
+                rows.append(Row(items: [i], width: sz.width, height: sz.height))
+            } else {
+                rows[rows.count - 1].items.append(i)
+                rows[rows.count - 1].width = add
+                rows[rows.count - 1].height = max(rows[rows.count - 1].height, sz.height)
+            }
+        }
+        return rows
     }
 }

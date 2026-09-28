@@ -91,7 +91,8 @@ private func catColor(_ c: Int) -> Color {
 }
 
 // A cat of size x size. It animates while any part moves, unless the
-// system asks for reduced motion (then it holds its first pose).
+// system asks for reduced motion (then it holds its first pose, as it does
+// under BackplaneTests, so its picture is the same every time).
 struct CatView: View {
     let rig: [CatPart]
     let size: CGFloat
@@ -105,7 +106,7 @@ struct CatView: View {
         self.paths = rig.map { catPath($0.d) }
     }
 
-    private var moving: Bool { !reduceMotion && rig.contains { !$0.anims.isEmpty } }
+    private var moving: Bool { !reduceMotion && !Platform.testing && rig.contains { !$0.anims.isEmpty } }
 
     var body: some View {
         TimelineView(.animation(paused: !moving)) { tl in

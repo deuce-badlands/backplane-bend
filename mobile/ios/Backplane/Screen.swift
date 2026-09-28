@@ -114,6 +114,48 @@ struct Ask: Decodable, Identifiable {
     let id, kind, head, detail: String
     let blocks: [Block]
     let buttons: [AskButton]
+    // an AskUserQuestion's questions as the agent sent them (nil otherwise)
+    let questions: [AskQuestion]?
+}
+
+// The agent's questions in the composer's place (src/mobile/dock.bend):
+// every answer, pick and word is Bend's; the dock draws them and sends
+// q-pick, q-own, q-discuss, q-go and q-send
+struct Dock: Decodable, Equatable {
+    let id: String
+    // the question shown
+    let at: Int
+    let questions: [DockQuestion]
+    // every question answered; the answers already sent
+    let ready, sent: Bool
+    let discuss, discussNote: String
+}
+
+struct DockQuestion: Decodable, Equatable {
+    let question, header: String
+    let multi: Bool
+    let options: [DockOption]
+    // words of the person's own, and whether the answer is them ("own"),
+    // a talk first ("discuss") or the options picked ("")
+    let own, mode: String
+    let answered: Bool
+}
+
+struct DockOption: Decodable, Equatable {
+    let label, description: String
+    let recommended, on: Bool
+}
+
+struct AskQuestion: Decodable, Hashable {
+    let question: String
+    let header: String?
+    let multiSelect: Bool?
+    let options: [AskOption]?
+}
+
+struct AskOption: Decodable, Hashable {
+    let label: String
+    let description: String?
 }
 
 // a thread this one delegated to ("select" opens it)
@@ -306,6 +348,8 @@ struct ThreadView: Decodable {
     // the agent's own subagents at work: what each does now
     let agents: [String]?
     let asks: [Ask]?
+    // the first ask with questions, as the dock shows it
+    let dock: Dock?
     let skills: [Skill]?
     let btw: Btw?
     // what the next message attaches, and what is still uploading (chunk:
@@ -340,15 +384,48 @@ struct FolderRow: Decodable, Hashable {
 struct SetButton: Decodable, Hashable {
     let label, action, value: String
     let on: Bool
+    // it acts on the row's field and waits for text in it; it undoes
+    // something (asked first, in confirm's words); a switch's "on"
+    let needs, danger, yes: Bool?
+    let confirm: String?
+}
+
+// a text field a row types into (sent as "bfield" name, as a bot form's);
+// the row's buttons then act on what was typed
+struct SetField: Decodable, Hashable {
+    let name, text, hint: String
+    let secret: Bool
 }
 
 struct SetRow: Decodable, Hashable {
+    // the section it is under, and a heading within it ("Installed")
+    let section: String?
+    let group: String?
+    // the control: "choice" (segmented), "menu" (pop-up), "stepper",
+    // "switch", "status" (a value, toned "ok" or "warn"), "field" (typed
+    // text); anything else draws its buttons in a row
+    let kind: String?
     let label, note: String
+    let value: String?
+    let tone: String?
+    let field: SetField?
     let buttons: [SetButton]
+    // chips under the row (the dictionary's terms, each taking itself out)
+    let chips: [SetButton]?
+}
+
+// a section of Settings: its title, what is set there in a few words, and
+// whether it needs you (a dot beside it)
+struct SetSection: Decodable, Hashable {
+    let title, summary: String
+    let attention: Bool
+    // the icon's name (threads, agents, writing, cad, appearance, network, voice)
+    var icon: String? = nil
 }
 
 struct Settings: Decodable {
     let rows: [SetRow]
+    let sections: [SetSection]?
 }
 
 // thread search ("search") or the file picker ("files"): its query and rows

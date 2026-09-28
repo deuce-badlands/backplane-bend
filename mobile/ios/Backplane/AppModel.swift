@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 
 // Feeds every paired hub's socket and the user's actions to the Bend
 // client, and shows whatever screen it answers. Runs its commands (send,
@@ -11,19 +10,24 @@ import UIKit
 final class AppModel {
     private let engine = Engine()
     // the client's state, kept for the next launch (StateStore)
-    private let kept = StateStore()
+    // (a model for tests keeps nothing: StateStore clears other builds' files)
+    private let kept: StateStore?
+    // false: a model for tests (init(live:))
+    private let live: Bool
     // something changed since the state was last kept
     @ObservationIgnored private var dirty = false
     @ObservationIgnored private var hubs: [String: Hub] = [:]
     // push tokens by kind, sent again to a hub paired later
     @ObservationIgnored private var tokens: [String: String] = [:]
     @ObservationIgnored private let notifier = Notifier()
+    #if os(iOS)
     @ObservationIgnored private var island: IslandController?
+    #endif
     @ObservationIgnored private var ready = false
 
     // the pairing links, one per hub, in the order they were paired
-    private(set) var links: [String] = UserDefaults.standard.stringArray(forKey: "links")
-        ?? UserDefaults.standard.string(forKey: "link").map { [$0] } ?? []
+    private(set) var links: [String] = Platform.defaults.stringArray(forKey: "links")
+        ?? Platform.defaults.string(forKey: "link").map { [$0] } ?? []
     private(set) var screen: Screen?
     // the board viewer's plots, which come straight from the socket
     let plots = PlotStore()
@@ -65,15 +69,15 @@ final class AppModel {
 
     // this install's id, part of every message id (a resend is stored once)
     private static var cid: String {
-        if let c = UserDefaults.standard.string(forKey: "cid") { return c }
+        if let c = Platform.defaults.string(forKey: "cid") { return c }
         let c = String(format: "%08x", UInt32.random(in: 0 ... UInt32.max))
-        UserDefaults.standard.set(c, forKey: "cid")
+        Platform.defaults.set(c, forKey: "cid")
         return c
     }
 
     // a thread's draft, written at once (a crash loses nothing typed); "" forgets it
     private static func keep(_ thread: String, _ text: String) {
-        let d = UserDefaults.standard
+        let d = Platform.defaults
         var o = (try? JSONSerialization.jsonObject(with: Data((d.string(forKey: "drafts") ?? "{}").utf8))) as? [String: String] ?? [:]
         o[thread] = text.isEmpty ? nil : text
         if let data = try? JSONSerialization.data(withJSONObject: o), let s = String(data: data, encoding: .utf8) {
@@ -89,7 +93,16 @@ final class AppModel {
         #endif
     }
 
-    init() {
+    // live false: a model for tests, with no kept state, no hubs, no alerts
+    // and no clock (replay() feeds it a scene)
+    init(live: Bool = true) {
+        self.live = live
+        guard live else {
+            links = []
+            kept = nil
+            return
+        }
+        kept = StateStore()
         #if DEBUG
         if let l = ProcessInfo.processInfo.environment["BACKPLANE_LINK"] { links = l.split(separator: " ").map(String.init) }
         #endif
@@ -97,15 +110,17 @@ final class AppModel {
         notifier.viewing = { [weak self] id in self?.active == true && self?.screen?.sel == id }
         let e = engine
         Task {
-            apply(await e.start(Self.cid, UserDefaults.standard.string(forKey: "drafts") ?? "{}"))
+            apply(await e.start(Self.cid, Platform.defaults.string(forKey: "drafts") ?? "{}"))
             // the state kept at the last launch: the screen shows at once, and
             // each hub then sends only what came since
-            if let text = kept.load() {
+            if let text = kept?.load() {
                 apply(await e.load(text))
                 for l in links { if let k = Pairing.key(l) { apply(await e.offline(k)) } }
             }
             ready = true
+            #if os(iOS)
             island = IslandController { [weak self] kind, token in self?.register(kind, token) }
+            #endif
             connect()
             #if DEBUG
             // headless checks pair from the environment: no permission prompt over the screen
@@ -122,6 +137,39 @@ final class AppModel {
             }
         }
     }
+
+    #if DEBUG
+    enum Step {
+        case recv(Data)
+        case act(String, String)
+        // a frame as the socket hands it over: a plot goes to the viewer,
+        // anything else to the Bend client (open(_:_:)'s onMessage)
+        case frame(Data)
+    }
+
+    // A scene fed straight to the Bend client, as BackplaneTests replays its
+    // fixtures: the hub by its key, the clock, then the hub's frames (CBOR)
+    // and the user's actions in order. Each answer is applied as a hub's
+    // would be, so the screen is the one the app would show.
+    func replay(hub: String, now: Int, steps: [Step]) async {
+        links = ["http://" + hub]
+        // its socket as a connected hub's (no time heard: a scene has no clock)
+        conn[hub] = HubConn(phase: .online)
+        let e = engine
+        apply(await e.start("tests", "{}"))
+        apply(await e.hubs([hub]))
+        apply(await e.tick(now))
+        apply(await e.online(hub, true))
+        for s in steps {
+            switch s {
+            case .recv(let d): apply(await e.recv(hub, d.base64EncodedString()))
+            case .act(let a, let v): apply(await e.act(a, v))
+            case .frame(let d):
+                if PlotStore.isPlot(d) { plots.receive(d) } else { apply(await e.recv(hub, d.base64EncodedString())) }
+            }
+        }
+    }
+    #endif
 
     // a new hub, or a new link to one already paired (it replaces the old)
     func pair(_ text: String) {
@@ -140,8 +188,8 @@ final class AppModel {
     }
 
     private func save() {
-        UserDefaults.standard.set(links, forKey: "links")
-        UserDefaults.standard.removeObject(forKey: "link")
+        Platform.defaults.set(links, forKey: "links")
+        Platform.defaults.removeObject(forKey: "link")
     }
 
     // an APNs token for this device's alerts (from the app delegate)
@@ -303,6 +351,14 @@ final class AppModel {
         run { await $0.quiet("bfield", name + "\u{1f}" + text) }
     }
 
+    // a field's text, then the action that reads it, in that order
+    func submit(_ name: String, _ text: String, _ action: String, _ value: String = "") {
+        run { e in
+            _ = await e.quiet("bfield", name + "\u{1f}" + text)
+            return await e.act(action, value)
+        }
+    }
+
     // an address on the hub in focus (a bot's browser frame, a webhook)
     func hubURL(_ path: String, query: [URLQueryItem] = [], token: Bool = true) -> URL? {
         guard let s = screen, let l = links.first(where: { Pairing.key($0) == s.hub }) else { return nil }
@@ -360,14 +416,17 @@ final class AppModel {
     func keep() {
         guard dirty, ready else { return }
         dirty = false
-        let e = engine, k = kept
+        guard let k = kept else { return }
+        let e = engine
         Task { k.save(await e.save()) }
     }
 
     func foreground(_ yes: Bool) {
         active = yes
         if !yes { keep() }
+        #if os(iOS)
         if yes, let s = screen { island?.show(s.island, foreground: true) }
+        #endif
     }
 
     private func apply(_ out: Out?, sent: String? = nil) {
@@ -388,7 +447,9 @@ final class AppModel {
                 shownSel = nav
                 path = nav.isEmpty ? [] : [nav]
             }
+            #if os(iOS)
             island?.show(s.island, foreground: active)
+            #endif
             #if DEBUG
             if let id = opening, let row = s.projects.lazy.flatMap(\.threads).first(where: { $0.id == id || $0.id.hasSuffix("|" + id) }) {
                 opening = nil
@@ -417,15 +478,7 @@ final class AppModel {
                         let kv = step.split(separator: "=", maxSplits: 1).map(String.init)
                         // "@attach": a noisy PNG big enough to go up in several pieces
                         if kv[0] == "@attach" {
-                            let img = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { c in
-                                for y in stride(from: 0, to: 400, by: 2) {
-                                    for x in stride(from: 0, to: 400, by: 2) {
-                                        UIColor(hue: .random(in: 0 ... 1), saturation: 0.8, brightness: 0.9, alpha: 1).setFill()
-                                        c.fill(CGRect(x: x, y: y, width: 2, height: 2))
-                                    }
-                                }
-                            }
-                            if let d = img.pngData() { attach(d, name: "noise.png") }
+                            if let d = Platform.noisePNG(side: 400) { attach(d, name: "noise.png") }
                             continue
                         }
                         act(kv[0], kv.count > 1 ? kv[1].replacingOccurrences(of: "$SIZE", with: TermSheet.size()) : "")
@@ -438,11 +491,14 @@ final class AppModel {
         for c in o.cmds {
             switch c.type {
             case "send": if let d = Data(base64Encoded: c.data ?? "") { hubs[c.hub ?? ""]?.send(d) }
-            case "copy": UIPasteboard.general.string = c.text ?? ""
+            // a model for tests touches nothing outside itself: no
+            // pasteboard, no kept drafts, no alerts
+            case "copy": if live { Platform.copy(c.text ?? "") }
             case "scroll": scrolls += 1
-            case "keep": Self.keep(c.thread ?? "", c.text ?? "")
-            // while asleep the hub's push carries the alert instead
-            case "notify": if active { notifier.post(thread: c.thread ?? "", key: c.key ?? "", title: c.title ?? "", body: c.body ?? "") }
+            case "keep": if live { Self.keep(c.thread ?? "", c.text ?? "") }
+            // while asleep the hub's push carries the alert instead (a Mac
+            // app is never asleep: it posts its own, see Platform)
+            case "notify": if live, active || Platform.postsAlertsInBackground { notifier.post(thread: c.thread ?? "", key: c.key ?? "", title: c.title ?? "", body: c.body ?? "") }
             default: break
             }
         }

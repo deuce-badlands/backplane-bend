@@ -10,4 +10,6 @@ for t in test/*_test.bend; do
   printf '%s\n' "$out" | grep -q '^ok ' && ! printf '%s\n' "$out" | grep -q '^Error:' || { echo "$t: did not run"; printf '%s\n' "$out" | head -20; status=1; continue; }
   printf '%s\n' "$out" | grep -q '^FAIL' && { echo "$t:"; printf '%s\n' "$out" | grep '^FAIL'; status=1; } || echo "$t: ok"
 done
+# the Apple app's fixtures are what the Bend side makes now
+scripts/apple-fixtures.sh --check || status=1
 exit $status

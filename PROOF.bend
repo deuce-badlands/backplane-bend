@@ -40,6 +40,7 @@ import ./src/gfx/face.bend as FA
 import ./src/core/glb.bend as G
 import ./src/mobile/picker.bend as MP
 import ./src/mobile/hubs.bend as Hb
+import ./src/mobile/dock.bend as MDK
 import ./src/core/space.bend as SPC
 import ./src/core/client.bend as U
 import ./src/core/menu.bend as MN
@@ -4144,6 +4145,42 @@ def Laws.carry_once():
   {==}
 
 def Laws.ask_makes_pending():
+  {==}
+
+def Laws.claude_prompt_tool_every_mode():
+  {==}
+
+def Laws.perm_answers_every_question():
+  {==}
+
+def Laws.perm_answers_text_first():
+  {==}
+
+def Laws.perm_answers_words_like_json():
+  {==}
+
+def Laws.perm_answers_only_text():
+  {==}
+
+def Laws.dock_label_unmarked():
+  {==}
+
+def Laws.dock_recommended_first():
+  {==}
+
+def Laws.dock_answer_in_option_order():
+  {==}
+
+def Laws.dock_answer_recommended_unmarked():
+  {==}
+
+def Laws.dock_answer_own_trimmed():
+  {==}
+
+def Laws.dock_answer_discuss():
+  {==}
+
+def Laws.dock_blank_words_unanswered():
   {==}
 
 def Laws.answer_clears_pending():

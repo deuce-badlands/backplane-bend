@@ -411,12 +411,37 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
 
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable, let cb = queue.makeCommandBuffer() else { return }
+        guard encode(cb, into: drawable.texture, k: Float(view.pixelScale)) else { return }
+        cb.present(drawable)
+        cb.commit()
+    }
+
+    // One frame of the view drawn offscreen, as draw(in:) draws it on the
+    // screen: a Metal layer shows only on a screen, so this is what a
+    // snapshot of the viewer takes (BackplaneTests).
+    func image(of view: MTKView) -> CGImage? {
         let w = Int(view.drawableSize.width), h = Int(view.drawableSize.height)
-        guard w > 0, h > 0 else { return }
+        guard w > 0, h > 0, let cb = queue.makeCommandBuffer() else { return nil }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d), encode(cb, into: t, k: Float(view.pixelScale)) else { return nil }
+        cb.commit()
+        cb.waitUntilCompleted()
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        t.getBytes(&px, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        guard let data = CGDataProvider(data: Data(px) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue),
+                       provider: data, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
+    // the frame into t (w by h pixels, k pixels a point); false when there is nothing to draw into
+    private func encode(_ cb: MTLCommandBuffer, into t: MTLTexture, k: Float) -> Bool {
+        let w = t.width, h = t.height
+        guard w > 0, h > 0 else { return false }
         targets(w, h)
-        let k = Float(view.contentScaleFactor)
         var u = Uniforms(size: SIMD2(Float(w), Float(h)), off: off * k, scale: scale * k, fade: 1, color: .zero)
-        let t = drawable.texture
         if three {
             u.mvp = orbit.mvp(Float(w) / Float(h))
             u.focal = 1 / tan(orbit.fov * .pi / 360) * Float(h) / 2
@@ -480,8 +505,7 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
             }
             hi(cb, t, &u)
         }
-        cb.present(drawable)
-        cb.commit()
+        return true
     }
 }
 
@@ -515,6 +539,7 @@ final class PlotCanvas: MTKView {
         isPaused = true
         enableSetNeedsDisplay = true
         preferredFramesPerSecond = 120
+        #if os(iOS)
         isMultipleTouchEnabled = true
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
@@ -528,15 +553,69 @@ final class PlotCanvas: MTKView {
             g.delegate = self
             addGestureRecognizer(g)
         }
+        #endif
     }
 
     required init(coder: NSCoder) { fatalError() }
 
+    #if os(iOS)
     // every physical pixel (the default scale can be below the panel's)
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if let s = window?.windowScene?.screen { contentScaleFactor = s.nativeScale }
     }
+
+    func redraw() {
+        setNeedsDisplay()
+        #if DEBUG
+        still()
+        #endif
+    }
+    private func relayout() { setNeedsLayout() }
+    #else
+    // y grows down, as on iOS: the board's transforms are shared
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    func redraw() {
+        needsDisplay = true
+        #if DEBUG
+        still()
+        #endif
+    }
+    private func relayout() { needsLayout = true }
+    #endif
+
+    #if DEBUG
+    // Under BackplaneTests the canvas also shows its frame as a still
+    // image over itself: a Metal layer draws only on a screen, so this is
+    // what a snapshot takes (the frame as it is once any fade is done).
+    #if os(iOS)
+    private var stillView: UIImageView?
+    #else
+    private var stillView: NSImageView?
+    #endif
+
+    private func still() {
+        // (at once: a test waiting on the main actor never lets queued work run)
+        guard Platform.testing, drawableSize.width > 0 else { return }
+        renderer.fade = 1
+        guard let img = renderer.image(of: self) else { return }
+        #if os(iOS)
+        let v = stillView ?? UIImageView()
+        v.image = UIImage(cgImage: img, scale: pixelScale, orientation: .up)
+        #else
+        let v = stillView ?? NSImageView()
+        v.imageScaling = .scaleAxesIndependently
+        v.image = NSImage(cgImage: img, size: bounds.size)
+        #endif
+        v.frame = bounds
+        if stillView == nil {
+            addSubview(v)
+            stillView = v
+        }
+    }
+    #endif
 
     private var three: Bool { renderer.three }
 
@@ -565,7 +644,7 @@ final class PlotCanvas: MTKView {
         o.home = o.dist
         renderer.orbit = o
         fitted = true
-        setNeedsDisplay()
+        redraw()
     }
 
     // the camera round a model's 3D box (x0 y0 z0 x1 y1 z1, the mesh's own
@@ -586,10 +665,27 @@ final class PlotCanvas: MTKView {
         fitted = true
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
+    private func fitFirst() {
         if !fitted { if box.count < 4, solid.count == 6 { fitSolid(solid) } else { refit() } }
     }
+
+    #if os(iOS)
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        fitFirst()
+        #if DEBUG
+        still()
+        #endif
+    }
+    #else
+    override func layout() {
+        super.layout()
+        fitFirst()
+        #if DEBUG
+        still()
+        #endif
+    }
+    #endif
 
     func show(_ f: PlotFrame, bg: UInt32, slab: UInt32, look: [UInt32]) {
         renderer.bg = SIMD4(Float((bg >> 16) & 255) / 255, Float((bg >> 8) & 255) / 255, Float(bg & 255) / 255, 1)
@@ -603,11 +699,11 @@ final class PlotCanvas: MTKView {
         box = f.box
         edge = f.edge.count == 4 && f.edge[0] <= f.edge[2] ? f.edge : f.box
         renderer.slab(edge, color: slab)
-        if first { fitted = false; setNeedsLayout() }
+        if first { fitted = false; relayout() }
         fadeFrom = f.fresh.isEmpty ? nil : f.at
         renderer.fade = f.fresh.isEmpty ? 1 : 0
         run()
-        setNeedsDisplay()
+        redraw()
     }
 
     // the picked piece ("chunk,info" of the held chunks), drawn bright
@@ -618,7 +714,7 @@ final class PlotCanvas: MTKView {
         } else {
             renderer.highlight(nil, nil)
         }
-        setNeedsDisplay()
+        redraw()
     }
 
     private func zoom(by f: Float, at p: CGPoint) {
@@ -636,10 +732,11 @@ final class PlotCanvas: MTKView {
         renderer.scale = s
     }
 
+    #if os(iOS)
     @objc private func pinched(_ g: UIPinchGestureRecognizer) {
         zoom(by: Float(g.scale), at: g.location(in: self))
         g.scale = 1
-        setNeedsDisplay()
+        redraw()
     }
 
     @objc private func panned(_ g: UIPanGestureRecognizer) {
@@ -651,7 +748,7 @@ final class PlotCanvas: MTKView {
             let m = SIMD2(Float(t.x), Float(t.y))
             if g.numberOfTouches >= 2 { o.move(m, o.unit(Float(bounds.height))) } else { o.spin(m, 0.008) }
             renderer.orbit = o
-            setNeedsDisplay()
+            redraw()
             return
         }
         renderer.off += SIMD2(Float(t.x), Float(t.y))
@@ -661,7 +758,7 @@ final class PlotCanvas: MTKView {
             fling = SIMD2(Float(v.x), Float(v.y))
             run()
         }
-        setNeedsDisplay()
+        redraw()
     }
 
     // two fingers twisting roll the model about the view axis
@@ -670,12 +767,22 @@ final class PlotCanvas: MTKView {
         g.rotation = 0
         guard three else { return }
         renderer.orbit.roll(a)
-        setNeedsDisplay()
+        redraw()
     }
 
     @objc private func tapped(_ g: UITapGestureRecognizer) {
-        if three || renderer.scale > fit * 1.5 { refit() } else { zoom(by: 3, at: g.location(in: self)) }
-        setNeedsDisplay()
+        doubled(at: g.location(in: self))
+    }
+
+    @objc private func picked(_ g: UITapGestureRecognizer) {
+        tap(at: g.location(in: self))
+    }
+    #endif
+
+    // a double tap or click: fit the 3D view or a zoomed board, else zoom in there
+    private func doubled(at p: CGPoint) {
+        if three || renderer.scale > fit * 1.5 { refit() } else { zoom(by: 3, at: p) }
+        redraw()
     }
 
     // where on the board a point of the view lands (micrometres), and on
@@ -696,10 +803,6 @@ final class PlotCanvas: MTKView {
         guard t > 0 else { return nil }
         let q = a + (b - a) * t
         return (SIMD2(q.x, q.y), above ? renderer.top : renderer.bottom)
-    }
-
-    @objc private func picked(_ g: UITapGestureRecognizer) {
-        tap(at: g.location(in: self))
     }
 
     // what lies under a point, for Bend to pick from (View.pick)
@@ -727,10 +830,149 @@ final class PlotCanvas: MTKView {
         onPick(json)
     }
 
+    #if os(macOS)
+    // The Mac reads the mouse, the trackpad and the keys the way the desktop
+    // viewer does (docs/parity.md): a drag turns the 3D model (ctrl pans,
+    // shift zooms, alt rolls) or moves the board; a mouse wheel zooms at
+    // the pointer, forward out; two fingers on a trackpad move the board
+    // (or turn the model), pinch and twist; keys 1-7 are the standard views,
+    // arrows turn 15 degrees (90 with shift), z and shift+z zoom, f fits.
+    private var press = CGPoint.zero
+    private var last = CGPoint.zero
+    private var dragged = false
+    private var pending: DispatchWorkItem?
+
+    private func point(_ e: NSEvent) -> CGPoint { convert(e.locationInWindow, from: nil) }
+
+    private func down(_ e: NSEvent) {
+        window?.makeFirstResponder(self)
+        press = point(e)
+        last = press
+        dragged = false
+    }
+
+    override func mouseDown(with e: NSEvent) {
+        down(e)
+        if e.clickCount == 2 {
+            pending?.cancel()
+            pending = nil
+            doubled(at: press)
+        }
+    }
+
+    override func mouseUp(with e: NSEvent) {
+        guard !dragged, e.clickCount == 1 else { return }
+        // a single click inspects once a second click can no longer follow
+        let p = point(e)
+        let w = DispatchWorkItem { [weak self] in self?.tap(at: p) }
+        pending = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: w)
+    }
+
+    override func mouseDragged(with e: NSEvent) { drag(e, pan: false) }
+    override func otherMouseDown(with e: NSEvent) { down(e) }
+    override func otherMouseDragged(with e: NSEvent) { drag(e, pan: false) }
+    // a right drag moves the view, like ctrl
+    override func rightMouseDown(with e: NSEvent) { down(e) }
+    override func rightMouseDragged(with e: NSEvent) { drag(e, pan: true) }
+
+    private func drag(_ e: NSEvent, pan: Bool) {
+        let p = point(e)
+        let m = SIMD2(Float(p.x - last.x), Float(p.y - last.y))
+        last = p
+        dragged = true
+        pending?.cancel()
+        let mods = e.modifierFlags
+        if mods.contains(.shift) {
+            // up is in, about the press
+            zoom(by: exp(-m.y * 0.006), at: press)
+        } else if three {
+            var o = renderer.orbit
+            if pan || mods.contains(.control) {
+                o.move(m, o.unit(Float(bounds.height)))
+            } else if mods.contains(.option) {
+                o.roll(m.x * 0.01)
+            } else {
+                o.spin(m, 0.008)
+            }
+            renderer.orbit = o
+        } else {
+            renderer.off += m
+        }
+        redraw()
+    }
+
+    override func scrollWheel(with e: NSEvent) {
+        if e.hasPreciseScrollingDeltas && !e.modifierFlags.contains(.command) {
+            // a trackpad's two fingers: the board moves with them, the model turns
+            let m = SIMD2(Float(e.scrollingDeltaX), Float(e.scrollingDeltaY))
+            if three { renderer.orbit.spin(m, 0.008) } else { renderer.off += m }
+        } else {
+            // a mouse wheel (or cmd+scroll): the physical forward turn zooms out
+            let d = Float(e.isDirectionInvertedFromDevice ? -e.scrollingDeltaY : e.scrollingDeltaY)
+            guard d != 0 else { return }
+            zoom(by: d > 0 ? 1 / 1.2 : 1.2, at: point(e))
+        }
+        redraw()
+    }
+
+    override func magnify(with e: NSEvent) {
+        zoom(by: Float(1 + e.magnification), at: point(e))
+        redraw()
+    }
+
+    // counter-clockwise degrees; the model turns with the fingers
+    override func rotate(with e: NSEvent) {
+        guard three else { return }
+        renderer.orbit.roll(-Float(e.rotation) * .pi / 180)
+        redraw()
+    }
+
+    override func keyDown(with e: NSEvent) {
+        let big = e.modifierFlags.contains(.shift)
+        let a: Float = big ? .pi / 2 : .pi / 12
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        func turn(_ dx: Float, _ dy: Float) {
+            if three {
+                renderer.orbit.spin(SIMD2(dx, dy), a)
+            } else {
+                renderer.off += SIMD2(-dx, -dy) * 48
+            }
+        }
+        switch e.specialKey {
+        case .leftArrow?: turn(-1, 0)
+        case .rightArrow?: turn(1, 0)
+        case .upArrow?: turn(0, -1)
+        case .downArrow?: turn(0, 1)
+        default:
+            switch e.charactersIgnoringModifiers ?? "" {
+            case "f", "F": refit()
+            case "z": zoom(by: 1 / 1.25, at: centre)
+            case "Z": zoom(by: 1.25, at: centre)
+            case let k where three && k.count == 1 && ("1" ... "7").contains(k):
+                // front, back, left, right, top, bottom, isometric (nearly
+                // straight down or up: aim needs a side to call right)
+                let side: Float = .pi / 2 - 0.001
+                let views: [(Float, Float)] = [(0, 0), (.pi, 0), (-.pi / 2, 0), (.pi / 2, 0), (0, side), (0, -side), (.pi / 4, 0.6154797)]
+                let v = views[Int(k)! - 1]
+                renderer.orbit.aim(yaw: v.0, pitch: v.1)
+            default:
+                super.keyDown(with: e)
+                return
+            }
+        }
+        redraw()
+    }
+    #endif
+
     private func run() {
         guard link == nil else { return }
         lastTick = CACurrentMediaTime()
+        #if os(iOS)
         let l = CADisplayLink(target: self, selector: #selector(tick))
+        #else
+        let l = displayLink(target: self, selector: #selector(tick))
+        #endif
         l.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         l.add(to: .main, forMode: .common)
         link = l
@@ -753,7 +995,7 @@ final class PlotCanvas: MTKView {
         } else {
             fling = .zero
         }
-        setNeedsDisplay()
+        redraw()
         if !busy {
             link?.invalidate()
             link = nil
@@ -767,28 +1009,30 @@ final class PlotCanvas: MTKView {
     }
 }
 
+#if os(iOS)
 extension PlotCanvas: UIGestureRecognizerDelegate {
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 }
+#endif
 
-struct PlotCanvasView: UIViewRepresentable {
+extension MTKView {
+    // pixels per point, for turning the view's point-space transform into the drawable's
+    var pixelScale: CGFloat {
+        #if os(iOS)
+        contentScaleFactor
+        #else
+        bounds.width > 0 ? drawableSize.width / bounds.width : (window?.backingScaleFactor ?? 2)
+        #endif
+    }
+}
+
+struct PlotCanvasView {
     let frame: PlotFrame?
     let mesh: MeshFrame?
     let viewer: Viewer
     let pick: (String) -> Void
 
-    func makeUIView(context: Context) -> UIView {
-        guard let c = PlotCanvas(canvas: .zero) else {
-            let l = UILabel()
-            l.text = "This device has no Metal."
-            l.textAlignment = .center
-            return l
-        }
-        return c
-    }
-
-    func updateUIView(_ v: UIView, context: Context) {
-        guard let c = v as? PlotCanvas else { return }
+    @MainActor fileprivate func update(_ c: PlotCanvas, _ context: Coordinator) {
         c.margin = viewer.margin
         c.zmin = viewer.zmin
         c.zmax = viewer.zmax
@@ -805,30 +1049,30 @@ struct PlotCanvasView: UIViewRepresentable {
         }
         if c.renderer.hiddenLayers != (viewer.off ?? 0) {
             c.renderer.hiddenLayers = viewer.off ?? 0
-            c.setNeedsDisplay()
+            c.redraw()
         }
-        if let f = frame, f.at != context.coordinator.shown || (viewer.look ?? []) != context.coordinator.look {
-            context.coordinator.shown = f.at
-            context.coordinator.look = viewer.look ?? []
+        if let f = frame, f.at != context.shown || (viewer.look ?? []) != context.look {
+            context.shown = f.at
+            context.look = viewer.look ?? []
             c.show(f, bg: viewer.bg, slab: viewer.slab, look: viewer.look ?? [])
             #if DEBUG
             // headless checks: SIMCTL_CHILD_BACKPLANE_TAP=x,y (points) taps there once
-            if let t = ProcessInfo.processInfo.environment["BACKPLANE_TAP"], !context.coordinator.tapped {
-                context.coordinator.tapped = true
+            if let t = ProcessInfo.processInfo.environment["BACKPLANE_TAP"], !context.tapped {
+                context.tapped = true
                 let xy = t.split(separator: ",").compactMap { Double($0) }
                 if xy.count == 2 { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { c.tap(at: CGPoint(x: xy[0], y: xy[1])) } }
             }
             #endif
         }
-        if three, let m = mesh, m.at != context.coordinator.mesh {
-            context.coordinator.mesh = m.at
+        if three, let m = mesh, m.at != context.mesh {
+            context.mesh = m.at
             c.renderer.load(mesh: m.mesh)
             // a part alone (no board plot under it) is fitted by its own box
             if frame == nil, let b = m.mesh?.box, b.count == 6 { c.solid = b; c.fitSolid(b) }
-            c.setNeedsDisplay()
+            c.redraw()
         }
-        if viewer.picked != context.coordinator.picked {
-            context.coordinator.picked = viewer.picked
+        if viewer.picked != context.picked {
+            context.picked = viewer.picked
             c.mark(viewer.picked)
         }
     }
@@ -843,6 +1087,39 @@ struct PlotCanvasView: UIViewRepresentable {
         var tapped = false
     }
 }
+
+#if os(iOS)
+extension PlotCanvasView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        guard let c = PlotCanvas(canvas: .zero) else {
+            let l = UILabel()
+            l.text = "This device has no Metal."
+            l.textAlignment = .center
+            return l
+        }
+        return c
+    }
+
+    func updateUIView(_ v: UIView, context: Context) {
+        if let c = v as? PlotCanvas { update(c, context.coordinator) }
+    }
+}
+#else
+extension PlotCanvasView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        guard let c = PlotCanvas(canvas: .zero) else {
+            let l = NSTextField(labelWithString: "This Mac has no Metal.")
+            l.alignment = .center
+            return l
+        }
+        return c
+    }
+
+    func updateNSView(_ v: NSView, context: Context) {
+        if let c = v as? PlotCanvas { update(c, context.coordinator) }
+    }
+}
+#endif
 
 // what a tapped item is, as the window's inspector shows it
 private struct CardView: View {
@@ -867,9 +1144,11 @@ private struct CardView: View {
             Button("Mention in chat") { model.act("view-mention", card.info) }
                 .buttonStyle(.borderedProminent)
         }
-        .padding()
-        .background(.regularMaterial, in: .rect(cornerRadius: 0))
-        .padding()
+        .padding(12)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(.regularMaterial, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
+        .padding(12)
     }
 }
 
@@ -883,6 +1162,8 @@ struct ViewerControls: View {
     var body: some View {
         let sheets = viewer.sheets ?? []
         let layers = (viewer.layerList ?? []).filter { present.contains($0.layer) }
+        // nothing to offer, no palette
+        if !sheets.isEmpty || !layers.isEmpty || viewer.open == "3d" {
         HStack(spacing: 8) {
             if !sheets.isEmpty {
                 Menu {
@@ -895,7 +1176,7 @@ struct ViewerControls: View {
                 } label: {
                     Label(sheets.first { $0.on }?.label.trimmingCharacters(in: .whitespaces) ?? "Sheet", systemImage: "doc.on.doc")
                 }
-                .buttonStyle(.bordered)
+                .plainMenu()
             }
             if !layers.isEmpty {
                 // stays open: several layers are turned on and off in a row
@@ -908,16 +1189,35 @@ struct ViewerControls: View {
                 } label: {
                     Label("Layers", systemImage: "square.3.layers.3d")
                 }
-                .buttonStyle(.bordered)
-                .menuActionDismissBehavior(.disabled)
+                .plainMenu()
+                .keepsMenuOpen()
             }
             if viewer.open == "3d", !viewer.layers.isEmpty {
                 Toggle(isOn: Binding(get: { viewer.parts ?? true }, set: { _ in model.act("view-parts") })) { Text("Parts") }
                     .toggleStyle(.button)
+                    .controlSize(.small)
             }
-            Spacer()
         }
-        .padding(.horizontal)
+        .font(.callout)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.regularMaterial, in: .rect(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.2)).allowsHitTesting(false))
+        }
+    }
+}
+
+// what the viewer shows: a part's renders (Mech's "renders") on their own
+// screen, anything else as a plot
+struct ViewerScreen: View {
+    let model: AppModel
+    let viewer: Viewer
+
+    var body: some View {
+        if viewer.open == "renders", let p = viewer.mech {
+            MechScreen(model: model, viewer: viewer, page: p)
+        } else {
+            PlotScreen(model: model, viewer: viewer)
+        }
     }
 }
 
@@ -926,59 +1226,144 @@ struct ViewerControls: View {
 struct PlotScreen: View {
     let model: AppModel
     let viewer: Viewer
+    // a pane beside the thread (a Mac, an iPad), not the whole screen
+    @Environment(\.splitLayout) private var split
 
     var body: some View {
         // a plot for any other source is stale (a switch in flight)
         let f = model.plots.frame.flatMap { $0.key == viewer.layers ? $0 : nil }
         let m = model.plots.mesh.flatMap { $0.key == viewer.key ? $0 : nil }
-        ZStack(alignment: .top) {
-            Color(rgb: viewer.bg).ignoresSafeArea()
-            PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer) { model.act("view-pick", $0) }
-                .id(viewer.layers.isEmpty ? viewer.key : "")
-                .ignoresSafeArea()
-            // Mech with no part to show: what the page says
-            if viewer.open == "mech", viewer.key.isEmpty {
-                Text(viewer.mech.map { $0.say.isEmpty ? $0.note : $0.say } ?? "").foregroundStyle(.secondary).padding().frame(maxHeight: .infinity)
-            } else if viewer.layers.isEmpty, m == nil {
-                ProgressView().tint(.white).frame(maxHeight: .infinity)
-            } else if viewer.layers.isEmpty, let why = m?.none, !why.isEmpty {
-                Text(why).foregroundStyle(.secondary).frame(maxHeight: .infinity)
-            } else if viewer.layers.isEmpty {
-                EmptyView()
-            } else if f == nil {
-                ProgressView().tint(.white).frame(maxHeight: .infinity)
-            } else if let why = f?.none, !why.isEmpty {
-                Text(why).foregroundStyle(.secondary).frame(maxHeight: .infinity)
-            } else if viewer.open == "3d", let why = m?.none, !why.isEmpty {
-                Text(why).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
-            } else if viewer.open == "3d", viewer.parts ?? true, let note = viewer.note, !note.isEmpty {
-                Text(note).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(spacing: 0) {
+            // the viewer's own bar: what it shows, its ground, and a way out
+            HStack(spacing: 10) {
                 Picker("Source", selection: Binding(get: { viewer.open }, set: { model.act("view", $0) })) {
                     ForEach(viewer.choices, id: \.value) { Text($0.label).tag($0.value) }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 300)
-                Spacer()
+                .labelsHidden()
+                // (at its own width where there is room; a phone's narrower bar shares it)
+                .frame(maxWidth: 360)
+                .layoutPriority(-1)
+                Spacer(minLength: 0)
                 // the viewer's own light or dark ground
-                Button { model.act("vw-light") } label: { Image(systemName: viewer.light == true ? "moon.fill" : "sun.max.fill").font(.title2) }
+                Button { model.act("vw-light") } label: { Image(systemName: viewer.light == true ? "moon" : "sun.max") }
+                    .buttonStyle(.borderless)
                     .accessibilityLabel(viewer.light == true ? "Dark ground" : "Light ground")
-                Button { model.act("view", "") } label: { Image(systemName: "xmark.circle.fill").font(.title2) }
+                Button { model.act("view", "") } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless)
+                    // escape closes the viewer over the whole screen; a pane
+                    // beside the thread leaves escape to what is being typed
+                    .keyboardShortcut(split ? nil : .cancelAction)
                     .accessibilityLabel("Close")
             }
-            .padding(.horizontal)
-            .padding(.top, 6)
-            ViewerControls(model: model, viewer: viewer, present: Set(f?.chunks.map { $0.layer } ?? []))
+            .font(.body.weight(.medium))
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .background(.bar)
+            // Mech: the part's page (what to open, how it renders)
             if viewer.open == "mech", let p = viewer.mech { MechBar(model: model, page: p) }
+            ZStack {
+                Color(rgb: viewer.bg)
+                PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer) { model.act("view-pick", $0) }
+                    .id(viewer.layers.isEmpty ? viewer.key : "")
+                // Mech with no part to show: what the page says
+                if viewer.open == "mech", viewer.key.isEmpty {
+                    Text(viewer.mech.map { $0.say.isEmpty ? $0.note : $0.say } ?? "").foregroundStyle(.secondary).padding()
+                } else if viewer.layers.isEmpty, m == nil {
+                    ProgressView().tint(.white)
+                } else if viewer.layers.isEmpty, let why = m?.none, !why.isEmpty {
+                    Text(why).foregroundStyle(.secondary)
+                } else if viewer.layers.isEmpty {
+                    EmptyView()
+                } else if f == nil {
+                    ProgressView().tint(.white)
+                } else if let why = f?.none, !why.isEmpty {
+                    Text(why).foregroundStyle(.secondary)
+                } else if viewer.open == "3d", let why = m?.none, !why.isEmpty {
+                    Text(why).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
+                } else if viewer.open == "3d", viewer.parts ?? true, let note = viewer.note, !note.isEmpty {
+                    Text(note).font(.caption).foregroundStyle(.secondary).padding().frame(maxHeight: .infinity, alignment: .bottom)
+                }
+                // sheet, layers and parts float over the canvas, top right
+                ViewerControls(model: model, viewer: viewer, present: Set(f?.chunks.map { $0.layer } ?? []))
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                if let c = viewer.card {
+                    CardView(card: c, model: model)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
             }
-            if let c = viewer.card {
-                CardView(card: c, model: model).frame(maxHeight: .infinity, alignment: .bottom)
-            }
+            .ignoresSafeArea(edges: .bottom)
         }
-        .preferredColorScheme(viewer.light == true ? .light : .dark)
-        .statusBarHidden()
+        .viewerScheme(viewer.light == true ? .light : .dark, pane: split)
+        .hiddenStatusBar(!split)
+    }
+}
+
+extension View {
+    // the board viewer: over the thread on a phone, in a pane beside the
+    // thread on a Mac
+    func boardViewer(model: AppModel, open: Bool) -> some View {
+        modifier(BoardViewer(model: model, open: open))
+    }
+}
+
+private struct BoardViewer: ViewModifier {
+    let model: AppModel
+    let open: Bool
+    @Environment(\.splitLayout) private var split
+    // the board's share of the space, set by dragging the divider
+    @State private var share: CGFloat = 0.5
+
+    func body(content: Content) -> some View {
+        if split {
+            GeometryReader { g in
+                // beside the thread when there is width for both, above it when not
+                let wide = g.size.width >= 900
+                let total = wide ? g.size.width : g.size.height
+                let keep: CGFloat = wide ? 340 : 240, least: CGFloat = wide ? 320 : 220
+                let board = max(least, min(total - keep, total * share))
+                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                let viewer = open ? model.screen?.thread?.viewer : nil
+                layout {
+                    if !wide, let v = viewer {
+                        ViewerScreen(model: model, viewer: v).frame(height: board)
+                        divider(wide: false, total: total)
+                    }
+                    content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if wide, let v = viewer {
+                        divider(wide: true, total: total)
+                        ViewerScreen(model: model, viewer: v).frame(width: board)
+                    }
+                }
+            }
+            .coordinateSpace(name: "boardSplit")
+        } else {
+            #if os(iOS)
+            content.fullScreenCover(isPresented: Binding(get: { open }, set: { if !$0 { model.act("view", "") } })) {
+                if let v = model.screen?.thread?.viewer { ViewerScreen(model: model, viewer: v) }
+            }
+            #else
+            content
+            #endif
+        }
+    }
+
+    // a hairline with a wider grip: dragging it moves the split
+    private func divider(wide: Bool, total: CGFloat) -> some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.25))
+            .frame(width: wide ? 1 : nil, height: wide ? nil : 1)
+            .overlay(
+                Color.clear
+                    .frame(width: wide ? 9 : nil, height: wide ? nil : 9)
+                    .contentShape(.rect)
+                    .resizeCursor(horizontal: wide)
+                    .gesture(DragGesture(coordinateSpace: .named("boardSplit")).onChanged { d in
+                        let at = wide ? d.location.x : d.location.y
+                        share = min(max(wide ? (total - at) / total : at / total, 0.2), 0.8)
+                    })
+            )
     }
 }
 
@@ -1075,7 +1460,7 @@ struct MechScreen: View {
                 .padding(.bottom)
             }
         }
-        .fullScreenCover(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
+        .fullScreen(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
     }
 }
 

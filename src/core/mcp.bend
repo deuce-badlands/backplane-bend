@@ -511,7 +511,8 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
 
 # Permission prompts (Claude's --permission-prompt-tool)
 # -----------------------------------------------------
-# Claude asks before a tool runs outside full access. The request becomes
+# Claude asks before a tool runs outside full access (and, in every mode,
+# for AskUserQuestion and ExitPlanMode). The request becomes
 # an ask the user answers; the MCP reply waits (the server parks it) until
 # then. AskUserQuestion becomes a question; ExitPlanMode's plan becomes a
 # proposed plan, and Claude is told to stop and wait.
@@ -555,7 +556,7 @@ def Perm.session_ok(as: List<&2, M.Ask>, +thread: String, +tool: String) -> Bool
   match as:
     case Nil{}:
       False{}
-    case M.Ask{_, th, k, t, _, _, _, an} <> rest:
+    case M.Ask{_, th, k, t, _, _, _, _, an} <> rest:
       Bool.or(Bool.and(Bool.and(String.eq(th, thread), String.eq(t, tool)), Bool.and(String.eq(k, "approval"), String.eq(an, "session"))), Perm.session_ok(rest, thread, tool))
 
 def Perm.approve(ok: Bool, +ask: String, +s: M.State, +now: Nat, +thread: String, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:
@@ -563,14 +564,14 @@ def Perm.approve(ok: Bool, +ask: String, +s: M.State, +now: Nat, +thread: String
     case True{}:
       McpOut{Mcp.result(id, Perm.text(Perm.allow(input))), B.Step.none(), ""}
     case False{}:
-      McpOut{"", B.Step{[M.AskOpened{ask, thread, "approval", tool, Perm.detail(tool, input), "", now}], Nil{}}, ask}
+      McpOut{"", B.Step{[M.AskOpened{ask, thread, "approval", tool, Perm.detail(tool, input), "", "", now}], Nil{}}, ask}
 
 def Perm.k(i: Nat, +ask: String, +s: M.State, +now: Nat, +thread: String, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:
   match i:
     case 0n:
-      McpOut{"", B.Step{[M.AskOpened{ask, thread, "input", tool, Perm.question(input), Perm.options(input), now}], Nil{}}, ask}
+      McpOut{"", B.Step{[M.AskOpened{ask, thread, "input", tool, Perm.question(input), Perm.options(input), J.Json.show(J.Json.get_obj(input, "questions")), now}], Nil{}}, ask}
     case 1n:
-      McpOut{Mcp.result(id, Perm.text(Perm.deny(Perm.plan_note()))), B.Step{[M.AskOpened{ask, thread, "plan", tool, J.Json.get_str(input, "plan", ""), "", now}], Nil{}}, ""}
+      McpOut{Mcp.result(id, Perm.text(Perm.deny(Perm.plan_note()))), B.Step{[M.AskOpened{ask, thread, "plan", tool, J.Json.get_str(input, "plan", ""), "", "", now}], Nil{}}, ""}
     case _:
       Perm.approve(Perm.session_ok(M.Asks.all(s), thread, tool), ask, s, now, thread, id, tool, input)
 
@@ -584,8 +585,36 @@ def Perm.answers.k(input: J.Json, extra: J.Json) -> J.Json:
     case _ _:
       input
 
+# the answers map Claude reads: a client that shows every question sends a
+# map (question -> answer), which the hub keeps marked (M.Answers.of); its
+# answers that are text go through. Anything else (words typed, a button,
+# an older client) answers the first question as it is, even words that
+# look like JSON
+def Perm.answers.strs(fs: J.Json) -> List<&2, J.KV>:
+  match fs:
+    case J.Field{+k, J.Str{+v}, t}:
+      J.KV{k, J.Str{v}} <> Perm.answers.strs(t)
+    case J.Field{_, _, t}:
+      Perm.answers.strs(t)
+    case _:
+      Nil{}
+
+def Perm.answers.obj(m: Maybe<&2, J.Json>, +input: J.Json, +answer: String) -> J.Json:
+  match m:
+    case Some{J.Obj{fs}}:
+      J.Json.obj(Perm.answers.strs(fs))
+    case _:
+      J.Json.obj([J.KV{Perm.question(input), J.Str{answer}}])
+
+def Perm.answers.map(m: Maybe<&2, String>, +input: J.Json, +answer: String) -> J.Json:
+  match m:
+    case Some{+json}:
+      Perm.answers.obj(J.Json.parse(json), input, answer)
+    case None{}:
+      J.Json.obj([J.KV{Perm.question(input), J.Str{answer}}])
+
 def Perm.answers(+input: J.Json, +answer: String) -> J.Json:
-  Perm.answers.k(input, J.Json.obj([J.KV{"answers", J.Json.obj([J.KV{Perm.question(input), J.Str{answer}}])}]))
+  Perm.answers.k(input, J.Json.obj([J.KV{"answers", Perm.answers.map(M.Answers.of(answer), input, answer)}]))
 
 def Perm.verdict.k(i: Nat, +tool: String, +input: J.Json, +answer: String) -> J.Json:
   match i:
@@ -663,7 +692,7 @@ def Grok.permit.k(ok: Bool, +ask: String, +now: Nat, +thread: String, +o: J.Json
     case True{}:
       McpOut{AC.Acp.permit.reply(AC.Acp.id(J.Json.get(o, "id")), J.Json.get_obj(o, "params"), "accept"), B.Step.none(), ""}
     case False{}:
-      McpOut{"", B.Step{[M.AskOpened{ask, thread, "approval", tool, AC.Acp.detail(J.Json.get_obj(o, "params")), "", now}], Nil{}}, ask}
+      McpOut{"", B.Step{[M.AskOpened{ask, thread, "approval", tool, AC.Acp.detail(J.Json.get_obj(o, "params")), "", "", now}], Nil{}}, ask}
 
 def Grok.permit(+s: M.State, +now: Nat, +thread: String, +o: J.Json) -> McpOut:
   Grok.permit.k(Perm.session_ok(M.Asks.all(s), thread, AC.Acp.tool(J.Json.get_obj(o, "params"))), B.Hub.id("q", now, B.Hub.seq(s)), now, thread, o,

@@ -16,6 +16,7 @@ import ../core/vt.bend as VT
 import ../core/codec.bend as C
 import ../core/botui.bend as B
 import ./bots.bend as MB
+import ./dock.bend as DK
 
 # Ui -> the screen the phone apps draw, as JSON. SwiftUI and Compose map
 # it onto native lists, toolbars and text fields; every decision (order,
@@ -557,10 +558,15 @@ def Mob.ask.body(plan: Bool, +d: String) -> List<&2, J.Json>:
     case False{}:
       Nil{}
 
+# every question the agent asked, as Claude sent them (header, question,
+# options with descriptions, multiSelect); null for approvals and plans
+def Mob.ask.qs(+qs: String) -> J.Json:
+  Maybe.default(&2, J.Json, Bool.pick(Maybe<&2, J.Json>, String.is_empty(qs), None{}, J.Json.parse(qs)), J.Null{})
+
 def Mob.ask(a: M.Ask, +draft: String) -> J.Json:
   match a:
-    case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
-      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str(k)},
+    case M.Ask{+id, _, +k, +tool, +d, +o, +qs, _, _}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str(k)}, J.KV{"questions", Mob.ask.qs(qs)},
         J.KV{"head", J.Json.str(Mob.ask.head(C.Codec.pos(["plan", "input"], k), tool))},
         J.KV{"detail", J.Json.str(Bool.pick(String, String.eq(k, "plan"), "", d))},
         J.KV{"blocks", J.Json.arr(Mob.ask.body(String.eq(k, "plan"), d))},
@@ -737,7 +743,7 @@ def Mob.btw(+u: U.Ui) -> J.Json:
   Bool.pick(J.Json, String.is_empty(U.Btw.question(u)), J.Null{},
     J.Json.obj([J.KV{"q", J.Json.str(U.Btw.question(u))}, J.KV{"a", J.Json.str(U.Btw.text(U.Btw.reply.of(u)))}]))
 
-def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json) -> J.Json:
+def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json, dock: J.Json) -> J.Json:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, _, _, +now, _, pa, _, _, _, _, _, +nf, _, _} M.Thread{+id, _, title, _, _, +turn, _, archived, o, +sa, +ua, pinned, _, branch, _, +pr, +mo, _, _, _, _}:
       +pg = Mob.page(drafts, id, st)
@@ -762,7 +768,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"send", J.Json.str(U.Follow.button(st, sel, V.View.running(turn), U.Follow.stop(V.View.running(turn), U.Str.get(drafts, sel), atts), U.Str.get(drafts, sel)))},
         J.KV{"sendAct", J.Json.str(U.Follow.act(U.Follow.stop(V.View.running(turn), U.Str.get(drafts, sel), atts)))},
         J.KV{"picker", Mob.picker.ctx(U.Str.get(nf, "models"), pr, mo, U.Effort.of(st, sel), U.Usage.tail(st, sel))},
-        J.KV{"skills", J.Json.arr(skills)}, J.KV{"btw", btw},
+        J.KV{"skills", J.Json.arr(skills)}, J.KV{"btw", btw}, J.KV{"dock", dock},
         J.KV{"attaching", J.Json.arr(Mob.chips(atts))}, J.KV{"uploading", J.Json.str(up)},
         J.KV{"chunk", J.Json.nat(AT.Att.chunk())},
         J.KV{"cap", J.Json.nat(AT.Att.cap())},
@@ -776,7 +782,7 @@ def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
       J.Null{}
     case False{}:
       Mob.thread(u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
-        Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u))
+        Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u), DK.MDock.json(u))
 
 def Mob.empty(n: Nat) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "Add a project to start.", "Pick a thread, or start one in a project.")
@@ -823,15 +829,75 @@ def Mob.search(+u: U.Ui) -> J.Json:
 def Mob.set.btn(+label: String, +action: String, +value: String, on: Bool) -> J.Json:
   J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"value", J.Json.str(value)}, J.KV{"on", J.Json.bool(on)}])
 
-def Mob.set.chips(xs: List<&2, String>, +cur: String, +key: String) -> List<&2, J.Json>:
+# a button with more to say: "needs" (it acts on the row's field, and waits
+# for text in it), "danger" and "confirm" (it undoes something: asked first,
+# in these words), "yes" (a switch's button that turns it on)
+def Mob.set.btn.x(+label: String, +action: String, +value: String, on: Bool, more: List<&2, J.KV>) -> J.Json:
+  J.Json.obj(List.append(&2, J.KV, [J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"value", J.Json.str(value)}, J.KV{"on", J.Json.bool(on)}], more))
+
+def Mob.set.needs(+label: String, +action: String, on: Bool) -> J.Json:
+  Mob.set.btn.x(label, action, "", on, [J.KV{"needs", J.Json.bool(True{})}])
+
+def Mob.set.danger(+label: String, +action: String, +confirm: String) -> J.Json:
+  Mob.set.btn.x(label, action, "", False{}, [J.KV{"danger", J.Json.bool(True{})}, J.KV{"confirm", J.Json.str(confirm)}])
+
+# a setting that is on or off ("on" unless it is "off")
+def Mob.set.switch(+cur: String, +key: String) -> List<&2, J.Json>:
+  [Mob.set.btn.x("On", "setting", key ++ "=on", Bool.not(String.eq(cur, "off")), [J.KV{"yes", J.Json.bool(True{})}]),
+   Mob.set.btn("Off", "setting", key ++ "=off", String.eq(cur, "off"))]
+
+# A row: its section (the native window's heads), the control it is
+# ("choice" a segmented pick, "menu" a pop-up, "stepper" the −/+ pair,
+# "switch" on/off, "status" a value, "field" typed text; "buttons" a row of
+# them), its label and note, its value and tone ("ok", "warn") for a
+# status, maybe a text field (typed as "bfield" name; the buttons act on
+# it), its buttons, and chips below it (the dictionary's terms)
+def Mob.set.krow(+sec: String, +kind: String, +label: String, +note: String, +value: String, +tone: String, fld: J.Json, btns: List<&2, J.Json>, chips: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"section", J.Json.str(sec)}, J.KV{"kind", J.Json.str(kind)}, J.KV{"label", J.Json.str(label)}, J.KV{"note", J.Json.str(note)},
+    J.KV{"value", J.Json.str(value)}, J.KV{"tone", J.Json.str(tone)}, J.KV{"field", fld}, J.KV{"buttons", J.Json.arr(btns)}, J.KV{"chips", J.Json.arr(chips)}])
+
+def Mob.set.row(+sec: String, +kind: String, +label: String, +note: String, btns: List<&2, J.Json>) -> J.Json:
+  Mob.set.krow(sec, kind, label, note, "", "", J.Null{}, btns, Nil{})
+
+def Mob.set.status(+sec: String, +label: String, +note: String, +value: String, +tone: String, btns: List<&2, J.Json>) -> J.Json:
+  Mob.set.krow(sec, "status", label, note, value, tone, J.Null{}, btns, Nil{})
+
+def Mob.set.field(+name: String, +text: String, +hint: String, secret: Bool) -> J.Json:
+  J.Json.obj([J.KV{"name", J.Json.str(name)}, J.KV{"text", J.Json.str(text)}, J.KV{"hint", J.Json.str(hint)}, J.KV{"secret", J.Json.bool(secret)}])
+
+# a choice as people read it: "claude" -> "Claude", "" -> the default's name
+def Mob.set.name(+v: String, +dflt: String) -> String:
+  match v:
+    case SNil{}:
+      dflt
+    case SCon{h, t}:
+      SCon{Char.to_upper(h), t}
+
+# a model as its menu shows it: "Opus 5.5" of "Opus 5.5 · claude-opus-5-5",
+# or its id when the CLI gave no label
+def Mob.set.model.k(ps: List<&2, String>, +id: String) -> String:
+  match ps:
+    case Nil{}:
+      id
+    case +h <> _:
+      Bool.pick(String, String.is_empty(String.trim(h)), id, String.trim(h))
+
+def Mob.set.model(+models: String, +prov: String, +m: String) -> String:
+  Mob.set.model.k(String.split(U.Models.label_of(models, prov, m), '·'), Bool.pick(String, String.is_empty(m), "Default", m))
+
+def Mob.set.picks(xs: List<&2, String>, +cur: String, +key: String, +dflt: String) -> List<&2, J.Json>:
   match xs:
     case Nil{}:
       Nil{}
     case +v <> t:
-      Mob.set.btn(Bool.pick(String, String.is_empty(v), "default", v), "setting", key ++ "=" ++ v, String.eq(v, cur)) <> Mob.set.chips(t, cur, key)
+      Mob.set.btn(Mob.set.name(v, dflt), "setting", key ++ "=" ++ v, String.eq(v, cur)) <> Mob.set.picks(t, cur, key, dflt)
 
-def Mob.set.row(+label: String, +note: String, btns: List<&2, J.Json>) -> J.Json:
-  J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"note", J.Json.str(note)}, J.KV{"buttons", J.Json.arr(btns)}])
+def Mob.set.models(xs: List<&2, String>, +models: String, +prov: String, +cur: String, +key: String) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +v <> t:
+      Mob.set.btn(Mob.set.model(models, prov, v), "setting", key ++ "=" ++ v, String.eq(v, cur)) <> Mob.set.models(t, models, prov, cur, key)
 
 def Mob.set.days(+d: String) -> List<&2, J.Json>:
   +n = {Maybe.default(&2, Nat, Nat.read(d), 3n) : Nat}
@@ -840,34 +906,128 @@ def Mob.set.days(+d: String) -> List<&2, J.Json>:
 
 def Mob.set.days.label(+d: String) -> String:
   +n = {Maybe.default(&2, Nat, Nat.read(d), 3n) : Nat}
-  "Settle after " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " day", " days")
+  Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " day", " days")
 
-def Mob.settings.of(+st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> J.Json:
+# Voice, as the web's: the microphones (Default first) and the
+# dictionary's terms (a term's chip takes it out)
+def Mob.set.devs(ds: List<&2, U.VDev>, +cur: String) -> List<&2, J.Json>:
+  match ds:
+    case Nil{}:
+      Nil{}
+    case U.VDev{+name, +label} <> t:
+      Mob.set.btn(label, "setting", "voice.device=" ++ name, String.eq(name, cur)) <> Mob.set.devs(t, cur)
+
+def Mob.set.terms(ts: List<&2, String>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> r:
+      Mob.set.btn(t, "voice-unterm", t, False{}) <> Mob.set.terms(r)
+
+# the default microphone's name after a comma, when the hub knows one (a
+# hub without its voice helper lists none)
+def Mob.set.mic(+name: String) -> String:
+  Bool.pick(String, String.is_empty(name), "", ", " ++ name)
+
+def Mob.set.voice(+u: U.Ui, +st: M.State) -> List<&2, J.Json>:
+  +dev = M.Setting.get(st, "voice.device", "")
+  +key = U.Ui.scratch(u, "@voice.key")
+  [Mob.set.krow("Voice", "field", "OpenAI API key", Bool.pick(String, String.is_empty(key), "For dictation (GPT-Live-Transcribe). Kept in the hub machine's secrets; never shown again.",
+      "Saved: " ++ key ++ ". Paste a new one to replace it."), key, Bool.pick(String, String.is_empty(key), "warn", "ok"),
+     # (a secret field: its text stays on the phone until Save sends it)
+     Mob.set.field("vkey", "", "sk-…", True{}),
+     Mob.set.needs("Save", "voice-key", True{}) <> Bool.pick(List<&2, J.Json>, String.is_empty(key), Nil{},
+       [Mob.set.danger("Remove", "voice-unkey", "Forget the saved OpenAI key? Dictation stops until a new one is saved.")]), Nil{}),
+   Mob.set.row("Voice", "menu", "Microphone", "The composer's mic records the hub machine's " ++
+      Bool.pick(String, String.is_empty(dev), "default microphone" ++ Mob.set.mic(U.Voice.label(u, U.Voice.default(u))), U.Voice.label(u, dev)) ++ ".",
+     Mob.set.btn("Default", "setting", "voice.device=", String.is_empty(dev)) <> Mob.set.devs(U.Voice.devices(u), dev)),
+   Mob.set.krow("Voice", "field", "Dictionary", "Names and terms to expect. Words you clarify after dictating join it.", "", "",
+     Mob.set.field("vterm", U.Ui.scratch(u, "@f.vterm"), "Add a term", False{}),
+     [Mob.set.needs("Add", "voice-term", False{})], Mob.set.terms(U.Voice.dict(u)))]
+
+# an agent CLI's row under Agents, grouped as "Installed": its version,
+# or not installed
+def Mob.set.cli(+models: String, +prov: String, +name: String) -> J.Json:
+  +v = U.Models.cli(models, prov)
+  J.Json.obj([J.KV{"section", J.Json.str("Agents")}, J.KV{"group", J.Json.str("Installed")}, J.KV{"kind", J.Json.str("status")}, J.KV{"label", J.Json.str(name)}, J.KV{"note", J.Json.str("")},
+    J.KV{"value", J.Json.str(Bool.pick(String, String.is_empty(v), "Not installed", v))}, J.KV{"tone", J.Json.str(Bool.pick(String, String.is_empty(v), "", "ok"))},
+    J.KV{"field", J.Null{}}, J.KV{"buttons", J.Json.arr(Nil{})}, J.KV{"chips", J.Json.arr(Nil{})}])
+
+# the sections in order: title, its icon (a name the apps draw: threads,
+# agents, writing, cad, appearance, network, voice), what is set there in
+# a few words, and whether it needs you (no voice key, no kicad-cli, an
+# update waiting)
+def Mob.set.sec(+title: String, +icon: String, +summary: String, attention: Bool) -> J.Json:
+  J.Json.obj([J.KV{"title", J.Json.str(title)}, J.KV{"icon", J.Json.str(icon)}, J.KV{"summary", J.Json.str(summary)}, J.KV{"attention", J.Json.bool(attention)}])
+
+# Voice needs a key only once the hub has said it has none and that it can
+# record here (a hub without its voice helper lists no microphone)
+def Mob.set.voice.wants(+u: U.Ui) -> Bool:
+  Bool.and(String.eq(U.Ui.scratch(u, "@voice.set"), "1"),
+    Bool.and(String.is_empty(U.Ui.scratch(u, "@voice.key")), Bool.not(List.is_empty(&2, U.VDev, U.Voice.devices(u)))))
+
+def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +models = U.Str.get(nf, "models")
   +model = M.Setting.get(st, "agent.model", "")
-  J.Json.obj([J.KV{"rows", J.Json.arr([
-    Mob.set.row(Mob.set.days.label(M.Setting.get(st, "settle.days", "3")), "Threads idle this long move to Settled. They stay saved.", Mob.set.days(M.Setting.get(st, "settle.days", "3"))),
-    Mob.set.row("Continue after a restart", "Turns a restart cuts short go on by themselves.", Mob.set.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue")),
-    Mob.set.row("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), prov ++ " is not installed", U.Models.cli(models, prov)), Mob.set.chips(["claude", "codex", "grok"], prov, "agent.provider")),
-    Mob.set.row("Model for new threads", Bool.pick(String, String.is_empty(model), "default", model) ++ ": " ++ U.Models.label_of(models, prov, model), Mob.set.chips("" <> U.Models.list(models, prov), model, "agent.model")),
-    Mob.set.row(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), Bool.pick(List<&2, J.Json>, String.is_empty(U.Str.get(nf, "kicad.fork")), [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})], Nil{})),
-    Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
-    Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
-    Mob.set.row("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
-    Mob.set.row("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
-    Mob.set.row("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
-    Mob.set.row("Pairing link", U.Pair.note(U.Pair.link(nf)), Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])),
-    Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-    Mob.set.row("Backplane " ++ v, U.Update.line(nf, note),
-      Bool.pick(List<&2, J.Json>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, J.Json>, String.starts_with(note, "update "), [Mob.set.btn("Install update", "update", "", False{})], [Mob.set.btn("Check now", "update-check", "", False{})])))])}])
+  +tprov = U.TextGen.provider(st)
+  +tmodel = U.TextGen.model(st)
+  +days = M.Setting.get(st, "settle.days", "3")
+  +follow = M.Setting.get(st, "followup", "")
+  +theme = M.Setting.get(st, "ui.theme", "")
+  +chan = M.Setting.get(st, "update.channel", "stable")
+  +waiting = String.starts_with(note, "update ")
+  +tail = U.Str.get(nf, "tailnet")
+  J.Json.obj([
+    J.KV{"sections", J.Json.arr([
+      Mob.set.sec("Threads", "threads", "Settle " ++ Mob.set.days.label(days) ++ " · " ++ Mob.set.name(follow, "Default"), False{}),
+      Mob.set.sec("Agents", "agents", Mob.set.name(prov, "") ++ " · " ++ Mob.set.model(models, prov, model), Bool.and(Bool.not(String.is_empty(models)), String.is_empty(U.Models.cli(models, prov)))),
+      Mob.set.sec("Writing", "writing", Mob.set.name(tprov, "") ++ " · " ++ Mob.set.model(models, tprov, tmodel), False{}),
+      Mob.set.sec("CAD", "cad", "KiCad " ++ Bool.pick(String, U.KiCad.found(nf), "found", "not found") ++ " · FreeCAD " ++ Bool.pick(String, U.FreeCAD.found(nf), "found", "not found"), Bool.not(U.KiCad.found(nf))),
+      Mob.set.sec("Appearance", "appearance", Mob.set.name(theme, "System") ++ " · " ++ Mob.set.name(U.Side.view(st), ""), False{}),
+      Mob.set.sec("Network", "network", Mob.set.name(chan, "") ++ Bool.pick(String, waiting, " · update", ""), waiting),
+      Mob.set.sec("Voice", "voice", Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@voice.key")), "No key", "Key saved"), Mob.set.voice.wants(u))])},
+    J.KV{"rows", J.Json.arr(List.append(&2, J.Json, [
+    Mob.set.krow("Threads", "stepper", "Settle after", "Threads idle this long move to Settled. They stay saved.", Mob.set.days.label(days), "", J.Null{}, Mob.set.days(days), Nil{}),
+    Mob.set.row("Threads", "choice", "Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. The send button's long press (⌥⌘Return on a Mac) does the other. Default: Claude steers, Codex and Grok queue.",
+      Mob.set.picks(["", "queue", "steer"], follow, "followup", "Default")),
+    Mob.set.krow("Threads", "switch", "Continue after a restart", "Turns a restart cuts short go on by themselves.", "", "", J.Null{},
+      Mob.set.switch(Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"), Nil{}),
+    Mob.set.row("Agents", "choice", "Provider for new threads", "Each thread keeps its own; change it from the composer.", Mob.set.picks(["claude", "codex", "grok"], prov, "agent.provider", "")),
+    Mob.set.row("Agents", "menu", "Model for new threads", U.Models.label_of(models, prov, model), Mob.set.models(U.Models.menu(models, prov), models, prov, model, "agent.model")),
+    Mob.set.cli(models, "claude", "Claude Code"),
+    Mob.set.cli(models, "codex", "Codex"),
+    Mob.set.cli(models, "grok", "Grok"),
+    Mob.set.row("Writing", "choice", "Provider", "Titles threads, names branches and writes commit messages. A small model keeps this cheap.", Mob.set.picks(["claude", "codex", "grok"], tprov, "text.provider", "")),
+    Mob.set.row("Writing", "menu", "Model", U.Models.label_of(models, tprov, tmodel), Mob.set.models(U.Models.menu(models, tprov), models, tprov, tmodel, "text.model")),
+    Mob.set.status("CAD", "KiCad CLI", U.KiCad.cli.note(nf), Bool.pick(String, U.KiCad.found(nf), "Found", "Not found"), Bool.pick(String, U.KiCad.found(nf), "ok", "warn"), Nil{}),
+    Bool.pick(J.Json, U.KiCad.ipc.ready(nf),
+      Mob.set.krow("CAD", "switch", "KiCad IPC", U.KiCad.ipc.note(nf), "", "", J.Null{}, Mob.set.switch(M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{}),
+      # (its note and button say what it needs: a value beside them left the label no room)
+      Mob.set.status("CAD", "KiCad IPC", "Agents drive KiCad through Backplane KiCad's api-server. The button installs it on the hub's machine (Linux x86-64); or get it from github.com/i2cjak/Backplane_KiCad.", "", "",
+        [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})])),
+    Mob.set.status("CAD", "FreeCAD", U.FreeCAD.note(nf), Bool.pick(String, U.FreeCAD.found(nf), "Found", "Not found"), Bool.pick(String, U.FreeCAD.found(nf), "ok", ""), Nil{}),
+    Mob.set.row("Appearance", "choice", "Theme", "The hub's windows and web page. System follows this device.", Mob.set.picks(["", "dark", "light"], theme, "ui.theme", "System")),
+    Mob.set.row("Appearance", "choice", "Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.picks(["projects", "active"], U.Side.view(st), "sidebar.view", "")),
+    Mob.set.status("Network", "Tailscale", "Listening on " ++ U.Str.get(nf, "listen"), Bool.pick(String, String.is_empty(tail), "Off", tail), "", Nil{}),
+    Mob.set.status("Network", "Pairing link", U.Pair.note(U.Pair.link(nf)), "", "", Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])),
+    Mob.set.row("Network", "choice", "Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.picks(["stable", "nightly"], chan, "update.channel", "")),
+    Mob.set.status("Network", "Backplane " ++ v, U.Update.line(nf, note),
+      Bool.pick(String, U.Update.packaged(nf), "Package", Bool.pick(String, waiting, "Update ready", "Current")), Bool.pick(String, waiting, "warn", "ok"),
+      Bool.pick(List<&2, J.Json>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, J.Json>, waiting, [Mob.set.btn("Install update", "update", "", True{})], [Mob.set.btn("Check now", "update-check", "", False{})])))],
+    Mob.set.voice(u, st)))}])
+
+def Mob.settings.k(+u: U.Ui, w: U.Ui) -> J.Json:
+  match w:
+    case U.Ui{+st, _, _, _, _, _, _, _, _, +v, _, _, _, +note, +nf, _, _}:
+      Mob.settings.of(u, st, nf, v, note)
 
 # shown while "flag settings" has it open
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:
-  match open u:
-    case True{} U.Ui{+st, _, _, _, _, _, _, _, _, +v, _, _, _, +note, +nf, _, _}:
-      Mob.settings.of(st, nf, v, note)
-    case False{} _:
+  match open:
+    case True{}:
+      Mob.settings.k(u, u)
+    case False{}:
       J.Null{}
 
 # A list of rows that each send an action with a value (the search, the

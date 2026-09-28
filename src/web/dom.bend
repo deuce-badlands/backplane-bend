@@ -156,6 +156,142 @@ def Md.igo(s: String, r: Inl & List<&2, Node>) -> List<&2, Node>:
 def Md.inline(s: String) -> List<&2, Node>:
   Md.igo(s, (IText{SNil{}}, Nil{}))
 
+# Tables
+# ------
+# GitHub's tables: a header row, then a row of dashes ("|---|:--:|") under
+# it, then the rows. Pipes at a row's ends are optional; a pipe escaped
+# ("\|") or inside `code` is text, not a new cell. Only the second row can
+# be the dashes: a later row of dashes is cells (a "-" for none), and lines
+# with no such second row are a paragraph.
+
+def Md.chr(c: Char) -> U32:
+  match c:
+    case Chr{u}:
+      u
+
+# a row without its outer pipes (an escaped last pipe is kept)
+def Md.row.end.k(end: Bool, +a: String) -> String:
+  match end:
+    case True{}:
+      String.take(a, Nat.sub(String.length(a), 1n))
+    case False{}:
+      a
+
+def Md.row.start.k(pipe: Bool, +r: String) -> String:
+  match pipe:
+    case True{}:
+      String.drop(r, 1n)
+    case False{}:
+      r
+
+def Md.row.strip(+r: String) -> String:
+  +a = Md.row.start.k(String.starts_with(r, "|"), String.trim(r))
+  Md.row.end.k(Bool.and(String.ends_with(a, "|"), Bool.not(String.ends_with(a, "\\|"))), a)
+
+# what the next character is to the split: 0 one after a backslash, 1 a
+# backslash, 2 a pipe that splits, 3 anything else, 4 none (the end)
+def Md.split.kind.k(+esc: Bool, +code: Bool, +u: U32) -> Nat:
+  Bool.pick(Nat, esc, 0n, Bool.pick(Nat, U32.is_eq(u, 92), 1n, Bool.pick(Nat, Bool.and(U32.is_eq(u, 124), Bool.not(code)), 2n, 3n)))
+
+def Md.split.kind(+esc: Bool, +code: Bool, s: String) -> Nat:
+  match s:
+    case SNil{}:
+      4n
+    case SCon{c, _}:
+      Md.split.kind.k(esc, code, Md.chr(c))
+
+# a row's cells: split at each pipe that is neither escaped nor in `code`
+# (code: inside backticks; esc: the last character was a backslash; k:
+# what the next character is)
+def Md.split.go(s: String, k: Nat, +code: Bool, +esc: Bool, +cur: String) -> List<&2, String>:
+  match s k:
+    case SCon{+c, +t} 0n:
+      Md.split.go(t, Md.split.kind(False{}, code, t), code, False{}, cur ++ Bool.pick(String, U32.is_eq(Md.chr(c), 124), "|", "\\" ++ SCon{c, SNil{}}))
+    case SCon{_, +t} 1n:
+      Md.split.go(t, Md.split.kind(True{}, code, t), code, True{}, cur)
+    case SCon{_, +t} 2n:
+      cur <> Md.split.go(t, Md.split.kind(False{}, code, t), code, False{}, "")
+    case SCon{+c, +t} 3n:
+      +flip = Bool.pick(Bool, U32.is_eq(Md.chr(c), 96), Bool.not(code), code)
+      Md.split.go(t, Md.split.kind(False{}, flip, t), flip, False{}, cur ++ SCon{c, SNil{}})
+    case _ _:
+      [Bool.pick(String, esc, cur ++ "\\", cur)]
+
+def Md.split(+r: String) -> List<&2, String>:
+  Md.split.go(r, Md.split.kind(False{}, False{}, r), False{}, False{}, "")
+
+def Md.cells.trim(cs: List<&2, String>) -> List<&2, String>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case c <> t:
+      String.trim(c) <> Md.cells.trim(t)
+
+def Md.cells(+r: String) -> List<&2, String>:
+  Md.cells.trim(Md.split(Md.row.strip(r)))
+
+# a dash cell: only -, : and spaces, with at least one -
+def Md.dash.code(c: Char) -> U32:
+  Md.chr(c)
+
+def Md.dash.go(s: String, dash: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      dash
+    case SCon{c, t}:
+      +u = Md.dash.code(c)
+      Bool.pick(Bool, Bool.or(U32.is_eq(u, 45), Bool.or(U32.is_eq(u, 58), U32.is_eq(u, 32))), Md.dash.go(t, Bool.or(dash, U32.is_eq(u, 45))), False{})
+
+def Md.dashes(cs: List<&2, String>) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case c <> t:
+      Bool.and(Md.dash.go(c, False{}), Md.dashes(t))
+
+# a line of dash cells with a pipe in it: a table's second row
+def Md.sep(+l: String) -> Bool:
+  Bool.and(String.contains(l, "|"), Md.dashes(Md.cells(l)))
+
+def Md.tcells(+tag: String, cs: List<&2, String>) -> List<&2, Node>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case c <> t:
+      El{tag, "", Nil{}, Md.inline(c)} <> Md.tcells(tag, t)
+
+def Md.tr(+tag: String, +r: String) -> Node:
+  El{"tr", "", Nil{}, Md.tcells(tag, Md.cells(r))}
+
+def Md.trows(rs: List<&2, String>) -> List<&2, Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Md.tr("td", r) <> Md.trows(t)
+
+# oldest row first: the header, the dashes (left out), the rows
+def Md.table.rows(rs: List<&2, String>) -> List<&2, Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +h <> t:
+      Md.tr("th", h) <> Md.trows(List.drop(&2, String, t, 1n))
+
+def Md.second.k(rs: List<&2, String>) -> Bool:
+  match rs:
+    case Nil{}:
+      False{}
+    case +s <> _:
+      Md.sep(s)
+
+def Md.second_dashes(rs: List<&2, String>) -> Bool:
+  match rs:
+    case Nil{}:
+      False{}
+    case _ <> t:
+      Md.second.k(t)
+
 # Blocks
 # ------
 
@@ -164,6 +300,7 @@ type Blk is Data:
   BPara{lines: List<&2, String>}
   BCode{lines: List<&2, String>}
   BList{items: List<&2, String>}
+  BTable{rows: List<&2, String>}
 
 type Line is Data:
   LFence{}
@@ -171,6 +308,7 @@ type Line is Data:
   LItem{text: String}
   LBlank{}
   LText{text: String}
+  LRow{text: String}
 
 def Md.line.k(fence: Bool, h3: Bool, h2: Bool, h1: Bool, item: Bool, blank: Bool, +t: String, l: String) -> Line:
   match fence h3 h2 h1 item blank:
@@ -189,11 +327,19 @@ def Md.line.k(fence: Bool, h3: Bool, h2: Bool, h1: Bool, item: Bool, blank: Bool
     case _ _ _ _ _ _:
       LText{l}
 
+# a line starting with | (or a table's dashes row) is a table row
+def Md.line.row(row: Bool, +t: String, +l: String) -> Line:
+  match row:
+    case True{}:
+      LRow{String.trim(t)}
+    case False{}:
+      Md.line.k(String.starts_with(t, "```"), String.starts_with(t, "### "), String.starts_with(t, "## "),
+        String.starts_with(t, "# "), Bool.or(String.starts_with(t, "- "), String.starts_with(t, "* ")),
+        String.is_empty(String.trim(t)), t, l)
+
 def Md.line(+l: String) -> Line:
   +t = String.trim_start(l)
-  Md.line.k(String.starts_with(t, "```"), String.starts_with(t, "### "), String.starts_with(t, "## "),
-    String.starts_with(t, "# "), Bool.or(String.starts_with(t, "- "), String.starts_with(t, "* ")),
-    String.is_empty(String.trim(t)), t, l)
+  Md.line.row(Bool.or(String.starts_with(t, "|"), Md.sep(t)), t, l)
 
 def Md.nl(first: Bool, acc: String) -> String:
   match first:
@@ -231,6 +377,33 @@ def Md.codeblock(ls: List<&2, String>) -> Node:
   +text = Md.unlines(ls)
   El{"div", "", [At{"class", "codeblock"}], [Dom.copy(text), El{"pre", "", Nil{}, [El{"code", "", Nil{}, [Txt{text}]}]}]}
 
+# a table, or (no dashes row second) its lines as a paragraph
+def Md.table.k(table: Bool, rs: List<&2, String>) -> Node:
+  match table:
+    case True{}:
+      El{"div", "", [At{"class", "mdtable"}], [El{"table", "", Nil{}, Md.table.rows(rs)}]}
+    case False{}:
+      Md.para(List.reverse(&2, String, rs))
+
+# oldest row first; a paragraph when there is no dashes row second
+def Md.table(+rs: List<&2, String>) -> Node:
+  Md.table.k(Md.second_dashes(rs), rs)
+
+def Md.close.para(ls: List<&2, String>, out: List<&2, Node>) -> List<&2, Node>:
+  Md.para(ls) <> out
+
+# a paragraph's one line with a pipe, then a dashes row: a table's header
+# (a table's pipes at the ends are optional)
+def Md.promote.k(head: Bool, ls: List<&2, String>, +t: String, out: List<&2, Node>) -> Blk & List<&2, Node>:
+  match head ls:
+    case True{} +h <> _:
+      (BTable{[t, h]}, out)
+    case _ ls:
+      (BTable{[t]}, Md.close.para(ls, out))
+
+def Md.promote(+ls: List<&2, String>, +t: String, out: List<&2, Node>) -> Blk & List<&2, Node>:
+  Md.promote.k(Bool.and(Nat.is_eq(List.length(&2, String, ls), 1n), Bool.and(Md.sep(t), String.contains(Maybe.default(&2, String, List.head(&2, String, ls), ""), "|"))), ls, t, out)
+
 # the node a finished block contributes
 def Md.close(b: Blk, out: List<&2, Node>) -> List<&2, Node>:
   match b:
@@ -242,6 +415,17 @@ def Md.close(b: Blk, out: List<&2, Node>) -> List<&2, Node>:
       Md.codeblock(ls) <> out
     case BList{xs}:
       El{"ul", "", Nil{}, Md.lis(List.reverse(&2, String, xs))} <> out
+    case BTable{rs}:
+      Md.table(List.reverse(&2, String, rs)) <> out
+
+# in a table, a line with a pipe is its next row (a table's pipes at the
+# ends are optional); any other line ends it
+def Md.table.more(row: Bool, rs: List<&2, String>, +t: String, out: List<&2, Node>) -> Blk & List<&2, Node>:
+  match row:
+    case True{}:
+      (BTable{String.trim(t) <> rs}, out)
+    case False{}:
+      (BPara{[t]}, Md.table(List.reverse(&2, String, rs)) <> out)
 
 def Md.head(n: Nat, t: String) -> Node:
   match n:
@@ -262,12 +446,20 @@ def Md.bstep(b: Blk, ln: Line, +raw: String, out: List<&2, Node>) -> Blk & List<
       (BCode{Nil{}}, Md.close(b, out))
     case _ LHead{n, t}:
       (BNone{}, Md.head(n, t) <> Md.close(b, out))
+    case BTable{rs} LRow{t}:
+      (BTable{t <> rs}, out)
+    case BPara{ls} LRow{t}:
+      Md.promote(ls, t, out)
+    case _ LRow{t}:
+      (BTable{[t]}, Md.close(b, out))
     case BList{xs} LItem{t}:
       (BList{t <> xs}, out)
     case _ LItem{t}:
       (BList{[t]}, Md.close(b, out))
     case _ LBlank{}:
       (BNone{}, Md.close(b, out))
+    case BTable{rs} LText{+t}:
+      Md.table.more(String.contains(t, "|"), rs, t, out)
     case BPara{ls} LText{t}:
       (BPara{t <> ls}, out)
     case _ LText{t}:

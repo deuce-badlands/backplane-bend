@@ -223,17 +223,17 @@ def Claude.dirs(ds: List<&2, String>) -> List<&2, String>:
       "--add-dir" <> d <> Claude.dirs(t)
 
 # `claude` flags for a long-lived stream-json session
-# outside full access, Claude asks Backplane (the user) before a tool runs
-def Claude.ask(r: M.RuntimeMode, i: M.InteractionMode, rest: List<&2, String>) -> List<&2, String>:
-  match r i:
-    case M.FullAccess{} M.DefaultMode{}:
-      rest
-    case _ _:
-      List.append(&2, String, ["--permission-prompt-tool", "mcp__backplane__permission_prompt"], rest)
+# Claude asks Backplane (the user) through this tool: before a tool runs
+# outside full access, and in every mode for its questions and plans.
+# Claude Code offers AskUserQuestion, EnterPlanMode and ExitPlanMode in a
+# -p session only when a permission prompt tool is named, so full access
+# names it too; its bypassPermissions still runs every other tool unasked.
+def Claude.ask(rest: List<&2, String>) -> List<&2, String>:
+  List.append(&2, String, ["--permission-prompt-tool", "mcp__backplane__permission_prompt"], rest)
 
 def Claude.args(+model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +dirs: List<&2, String>) -> List<&2, String>:
   List.append(&2, String, ["-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json",
     "--include-partial-messages", "--permission-mode", Claude.permission(r, i),
     "--append-system-prompt", prompt],
-    Claude.ask(r, i,
+    Claude.ask(
     Claude.opt("--model", model, Claude.opt("--resume", session, Claude.dirs(dirs)))))

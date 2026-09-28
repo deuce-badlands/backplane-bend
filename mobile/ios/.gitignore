@@ -2,3 +2,5 @@ Backplane/bridge.js
 build/
 xcuserdata/
 *.xcworkspace/xcuserdata/
+# snapshot test images: recorded locally (scripts/test-apple.sh), not kept in git
+BackplaneTests/__Snapshots__/
