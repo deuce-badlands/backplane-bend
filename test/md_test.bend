@@ -28,4 +28,14 @@ def main() -> IO(Unit):
     C.Check.str("stray", shows(D.Md.render("2 * 3 `x")), "<p>2 * 3 `x</p>")
     C.Check.str("html stays text", shows(D.Md.render("<b>hi</b>")), "<p><b>hi</b></p>")
     C.Check.str("table", shows(D.Md.render("before\n| | Pads | Range |\n|---|:--:|---|\n| Chips | 2 (20) | **3** |\n| Level | ~27 dB | `x` |\nafter")), "<p>before</p><div class=mdtable><table><tr><th></th><th>Pads</th><th>Range</th></tr><tr><td>Chips</td><td>2 (20)</td><td><strong>3</strong></td></tr><tr><td>Level</td><td>~27 dB</td><td><code>x</code></td></tr></table></div><p>after</p>")
-    C.Check.str("table without header", shows(D.Md.render("| a | b |\n| c | d |")), "<div class=mdtable><table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table></div>")
+    # GitHub's rules: no dashes row second, no table (the lines are prose)
+    C.Check.str("rows without a dashes row are prose", shows(D.Md.render("| a | b |\n| c | d |")), "<p>| a | b |\n| c | d |</p>")
+    C.Check.str("a lone pipe line is prose", shows(D.Md.render("| not a table")), "<p>| not a table</p>")
+    C.Check.str("a later dashes row is cells", shows(D.Md.render("| a | b |\n|---|---|\n| - | - |\n| 1 | 2 |")),
+      "<div class=mdtable><table><tr><th>a</th><th>b</th></tr><tr><td>-</td><td>-</td></tr><tr><td>1</td><td>2</td></tr></table></div>")
+    C.Check.str("pipes at the ends are optional", shows(D.Md.render("a | b\n---|---\n1 | 2")),
+      "<div class=mdtable><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></div>")
+    C.Check.str("an escaped pipe is text", shows(D.Md.render("| x | y |\n|---|---|\n| a \\| b | c |")),
+      "<div class=mdtable><table><tr><th>x</th><th>y</th></tr><tr><td>a | b</td><td>c</td></tr></table></div>")
+    C.Check.str("a pipe in code is text", shows(D.Md.render("| x | y |\n|---|---|\n| `a|b` | c |")),
+      "<div class=mdtable><table><tr><th>x</th><th>y</th></tr><tr><td><code>a|b</code></td><td>c</td></tr></table></div>")

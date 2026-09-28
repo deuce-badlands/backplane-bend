@@ -922,6 +922,96 @@ def TL.trim.k(blank: Bool, +ls: List<&2, String>) -> List<&2, String>:
 def TL.trim(+ls: List<&2, String>) -> List<&2, String>:
   TL.trim.k(String.is_empty(Maybe.default(&2, String, List.last(&2, String, ls), "x")), ls)
 
+# A markdown table (web/dom.bend's Md.table: a div around a table) as
+# monospaced lines: the header, a rule, the rows, each column as wide as
+# its widest cell
+def TL.cells(ns: List<&2, N.Node>) -> List<&2, String>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case N.El{_, _, _, ks} <> t:
+      String.trim(Nd.plain(ks)) <> TL.cells(t)
+    case _ <> t:
+      TL.cells(t)
+
+def TL.rows(ns: List<&2, N.Node>) -> List<&2, List<&2, String>>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case N.El{_, _, _, ks} <> t:
+      TL.cells(ks) <> TL.rows(t)
+    case _ <> t:
+      TL.rows(t)
+
+def TL.lens(cs: List<&2, String>) -> List<&2, Nat>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case c <> t:
+      String.length(c) <> TL.lens(t)
+
+def TL.wmax(ws: List<&2, Nat>, cs: List<&2, String>) -> List<&2, Nat>:
+  match ws cs:
+    case Nil{} cs:
+      TL.lens(cs)
+    case ws Nil{}:
+      ws
+    case +w <> wt +c <> ct:
+      Bool.pick(Nat, Nat.is_lt(w, String.length(c)), String.length(c), w) <> TL.wmax(wt, ct)
+
+def TL.widths(rs: List<&2, List<&2, String>>, ws: List<&2, Nat>) -> List<&2, Nat>:
+  match rs:
+    case Nil{}:
+      ws
+    case r <> t:
+      TL.widths(t, TL.wmax(ws, r))
+
+def TL.fill(+c: String, n: Nat) -> String:
+  match n:
+    case 0n:
+      ""
+    case 1n+k:
+      c ++ TL.fill(c, k)
+
+def TL.cols(cs: List<&2, String>, ws: List<&2, Nat>) -> List<&2, String>:
+  match cs ws:
+    case +c <> ct +w <> wt:
+      (c ++ TL.fill(" ", Nat.sub(w, String.length(c)))) <> TL.cols(ct, wt)
+    case +c <> ct Nil{}:
+      c <> TL.cols(ct, Nil{})
+    case Nil{} _:
+      Nil{}
+
+def TL.rule(ws: List<&2, Nat>) -> List<&2, String>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case +w <> t:
+      TL.fill("-", w) <> TL.rule(t)
+
+def TL.tlines(rs: List<&2, List<&2, String>>, +ws: List<&2, Nat>, first: Bool) -> List<&2, TLine>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      List.append(&2, TLine, TLine{String.join(TL.cols(r, ws), " | "), T.Th.text(), 1, "", 0} <>
+        Bool.pick(List<&2, TLine>, first, [TLine{String.join(TL.rule(ws), "-+-"), T.Th.faint(), 1, "", 0}], Nil{}), TL.tlines(t, ws, False{}))
+
+def TL.table(trs: List<&2, N.Node>) -> List<&2, TLine>:
+  +rs = TL.rows(trs)
+  List.append(&2, TLine, TL.tlines(rs, TL.widths(rs, Nil{}), True{}), [TLine{"", 0, 9, "", 0}])
+
+# a div: a table's (its first child a table), else a code block's
+def TL.div.n(n: N.Node, +ks: List<&2, N.Node>) -> List<&2, TLine>:
+  match n:
+    case N.El{"table", _, _, trs}:
+      TL.table(trs)
+    case _:
+      List.concat(&2, TLine, [[TLine{"code", T.Th.faint(), 8, Nd.plain(ks), 0}], TL.code(TL.trim(String.split(Nd.plain(ks), '\n'))), [TLine{"", 0, 9, "", 0}]])
+
+def TL.div(+ks: List<&2, N.Node>) -> List<&2, TLine>:
+  TL.div.n(Maybe.default(&2, N.Node, List.head(&2, N.Node, ks), N.Txt{""}), ks)
+
 def TL.block(+ty: Ty, n: N.Node, +px: U32) -> List<&2, TLine>:
   match n:
     case N.El{"p", _, _, +ks}:
@@ -931,7 +1021,7 @@ def TL.block(+ty: Ty, n: N.Node, +px: U32) -> List<&2, TLine>:
     case N.El{"ol", _, _, ks}:
       TL.items(ty, ks, px)
     case N.El{"div", _, _, +ks}:
-      List.concat(&2, TLine, [[TLine{"code", T.Th.faint(), 8, Nd.plain(ks), 0}], TL.code(TL.trim(String.split(Nd.plain(ks), '\n'))), [TLine{"", 0, 9, "", 0}]])
+      TL.div(ks)
     case N.El{_, _, _, ks}:
       TL.texts(Ty.wrap(ty, 1n, Nd.plain(ks), px), T.Th.text(), 5)
     case N.Txt{s}:
